@@ -1,0 +1,58 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: energy-timescaledb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-energy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energy}
+      POSTGRES_DB: ${POSTGRES_DB:-energy}
+      TZ: UTC
+    ports:
+      - "5433:5432"                                   # 5433 để không trùng Postgres khác trên máy
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro      # 001 → 00x chạy tự động khi volume trống
+      - ./data:/data:ro                               # cho phép \copy CSV từ trong container
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-energy} -d ${POSTGRES_DB:-energy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: energy-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      POSTGRES_USER: ${POSTGRES_USER:-energy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energy}
+      POSTGRES_DB: ${POSTGRES_DB:-energy}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    container_name: energy-api
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-energy}:${POSTGRES_PASSWORD:-energy}@timescaledb:5432/${POSTGRES_DB:-energy}
+      GRAFANA_URL: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  timescale_data:
+  grafana_data:

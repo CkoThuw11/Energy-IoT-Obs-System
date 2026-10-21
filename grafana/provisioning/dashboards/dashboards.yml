@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: energy
+    folder: Energy IoT
+    type: file
+    allowUiUpdates: true
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards
