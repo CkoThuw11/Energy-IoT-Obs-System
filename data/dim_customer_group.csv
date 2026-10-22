@@ -1,0 +1,13 @@
+customer_group_id,substation_id,voltage_side,group_name,load_share,shed_priority,is_critical,attr_source
+1,1,M,Công nghiệp nặng (Trạm Y – trung áp),0.420,3,true,SIMULATED
+2,1,L,Thương mại & dịch vụ (Trạm Y – hạ áp),0.340,2,false,SIMULATED
+3,1,L,Dân dụng (Trạm Y – hạ áp),0.240,1,false,SIMULATED
+4,2,M,Công nghiệp nhẹ (Trạm 2 – trung áp),0.380,3,true,SIMULATED
+5,2,L,Thương mại (Trạm 2 – hạ áp),0.360,2,false,SIMULATED
+6,2,L,Dân dụng (Trạm 2 – hạ áp),0.260,1,false,SIMULATED
+7,3,M,Công nghiệp nặng (Trạm 3 – trung áp),0.450,3,true,SIMULATED
+8,3,L,Thương mại & dịch vụ (Trạm 3 – hạ áp),0.330,2,false,SIMULATED
+9,3,L,Dân dụng (Trạm 3 – hạ áp),0.220,1,false,SIMULATED
+10,4,M,Công nghiệp nhẹ (Trạm 4 – trung áp),0.400,3,true,SIMULATED
+11,4,L,Thương mại (Trạm 4 – hạ áp),0.350,2,false,SIMULATED
+12,4,L,Dân dụng (Trạm 4 – hạ áp),0.250,1,false,SIMULATED

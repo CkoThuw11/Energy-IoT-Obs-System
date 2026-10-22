@@ -1,0 +1,5 @@
+substation_id,substation_code,display_name,source_series,reading_source_type,rating_factor,rated_load,criticality,neighbor_substation_id,attr_source
+1,S1,Trạm Y,ETTm1,REAL,1.10,,3,3,SIMULATED
+2,S2,Trạm 2,ETTm2,REAL,1.10,,4,4,SIMULATED
+3,S3,Trạm 3,ETTm1,DERIVED,1.35,,2,1,SIMULATED
+4,S4,Trạm 4,ETTm2,DERIVED,1.15,,3,2,SIMULATED

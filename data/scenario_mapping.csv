@@ -1,0 +1,5 @@
+substation_id,mapping_version,source_series,shift_days,noise_pct,random_seed
+1,v1,ETTm1,0,0.00,
+2,v1,ETTm2,0,0.00,
+3,v1,ETTm1,7,2.50,42
+4,v1,ETTm2,14,3.00,99
