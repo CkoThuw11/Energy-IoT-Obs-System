@@ -1,0 +1,41 @@
+﻿station,t_start,t_end,mo_ta,loai,giai_doan,loai_khoi_hieu_chuan
+ETTm1,2016-07-30 23:45:00,2016-07-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2016-08-30 23:45:00,2016-08-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2016-10-30 23:45:00,2016-10-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2016-12-05 08:30:00,2016-12-07 18:45:00,HUFL = HULL = 0 liên tục 234 bản ghi (≈58.5 giờ); MUFL cũng = 0: mất tải hoặc mất truyền thông.,ZERO_LOAD,hieu_chuan,True
+ETTm1,2016-12-15 16:15:00,2016-12-15 17:00:00,Cả 7 cột đứng yên 4 bản ghi (≈1 giờ).,STUCK,hieu_chuan,True
+ETTm1,2016-12-30 23:45:00,2016-12-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2017-01-09 17:15:00,2017-01-09 21:15:00,"Cả 7 cột đứng yên 17 bản ghi (≈4.25 giờ): giống mất truyền thông, hệ thống giữ lại giá trị cuối.",COMM_LOSS,hieu_chuan,True
+ETTm1,2017-01-15 12:00:00,2018-06-26 16:30:00,"HUFL âm ở 18.3% số bản ghi trong khoảng này (95% rơi vào 09:00–16:59): công suất chảy ngược; giữ lại, S_H dùng bình phương nên không phụ thuộc dấu.",SIGN_CHANGE,ca_hai,False
+ETTm1,2017-01-30 23:45:00,2017-01-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2017-03-30 23:45:00,2017-03-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2017-04-25 12:30:00,2017-04-25 13:15:00,Cả 7 cột đứng yên 4 bản ghi (≈1 giờ).,STUCK,hieu_chuan,True
+ETTm1,2017-05-30 23:45:00,2017-05-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2017-07-30 23:45:00,2017-07-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2017-08-30 23:45:00,2017-08-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2017-10-30 23:45:00,2017-10-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm1,2017-12-30 23:45:00,2017-12-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True
+ETTm1,2018-01-30 23:45:00,2018-01-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True
+ETTm1,2018-02-23 03:30:00,2018-02-23 04:30:00,"HUFL và HULL đứng yên 5 bản ghi (≈1.25 giờ) trong khi MUFL, MULL, OT vẫn thay đổi: S_H bị đóng băng.",STUCK_HV,kiem_thu,True
+ETTm1,2018-03-30 23:45:00,2018-03-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True
+ETTm1,2018-05-30 23:45:00,2018-05-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True
+ETTm2,2016-07-30 23:45:00,2016-07-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2016-08-10 14:30:00,2016-08-11 10:00:00,"HUFL và HULL đứng yên 79 bản ghi (≈19.75 giờ) trong khi MUFL, MULL, OT vẫn thay đổi: S_H bị đóng băng.",STUCK_HV,hieu_chuan,True
+ETTm2,2016-08-30 23:45:00,2016-08-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2016-10-30 23:45:00,2016-10-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2016-12-15 16:15:00,2016-12-15 17:15:00,Cả 7 cột đứng yên 5 bản ghi (≈1.25 giờ).,STUCK,hieu_chuan,True
+ETTm2,2016-12-18 08:00:00,2016-12-18 18:00:00,"HUFL = HULL = 0 liên tục 41 bản ghi (≈10.25 giờ); MUFL vẫn có số liệu: hỏng cảm biến cao áp, không phải mất tải thật.",ZERO_LOAD,hieu_chuan,True
+ETTm2,2016-12-30 23:45:00,2016-12-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2017-01-30 23:45:00,2017-01-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2017-03-30 23:45:00,2017-03-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2017-04-10 00:00:00,2017-06-30 23:45:00,"Đổi cấu hình đo (mốc theo kế hoạch): HULL bắt đầu âm từ 13/04/2017, MUFL kẹt ở 88.298 (4101 bản ghi, 18/04 → 01/06), có 7 chuỗi đứng yên/tải = 0 (dài nhất ≈77 giờ, 10/04 → 13/04).",CONFIG_CHANGE,hieu_chuan,True
+ETTm2,2017-04-13 16:45:00,2018-02-13 07:45:00,"HULL âm ở 2.7% số bản ghi trong khoảng này, bắt đầu cùng đợt đổi cấu hình đo; giữ lại, S_H dùng bình phương nên không phụ thuộc dấu.",SIGN_CHANGE,ca_hai,False
+ETTm2,2017-05-30 23:45:00,2017-05-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2017-07-01 00:00:00,2018-06-26 19:45:00,"Tải trung bình tháng thấp hơn cùng tháng năm trước 11%–38% (07/2017–03/2018 so với 07/2016–03/2017); khi bơm sự cố phải tính theo % định mức, không theo giá trị tuyệt đối.",DRIFT,ca_hai,False
+ETTm2,2017-07-30 23:45:00,2017-07-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2017-08-30 23:45:00,2017-08-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2017-10-30 23:45:00,2017-10-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,hieu_chuan,True
+ETTm2,2017-12-30 23:45:00,2017-12-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True
+ETTm2,2018-01-30 23:45:00,2018-01-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True
+ETTm2,2018-03-30 23:45:00,2018-03-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True
+ETTm2,2018-05-30 23:45:00,2018-05-31 23:45:00,Ngày 31 bị điền giá trị cuối: cả 7 cột đứng yên từ 23:45 ngày 30 đến 23:45 ngày 31 (97 bản ghi).,DAY31_FILL,kiem_thu,True

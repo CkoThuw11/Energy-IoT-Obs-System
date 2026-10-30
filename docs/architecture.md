@@ -1,118 +1,125 @@
 # Kiến trúc hệ thống
 
 ## 1. Tổng quan
-Hệ thống nhận dữ liệu cảm biến của 4 trạm biến áp. Dữ liệu được đưa vào kho dữ liệu chuỗi thời gian và làm sạch theo từng lớp. Sau đó hệ thống phát hiện bất thường, xếp hạng cảnh báo và hiển thị trên dashboard để Giám đốc Kỹ thuật tiếp nhận và ra quyết định điều phối.
+Hệ thống phát lại dữ liệu cảm biến của 4 trạm biến áp vào kho dữ liệu chuỗi thời gian. Kho tự làm sạch và tổng hợp dữ liệu. Detector kiểm tra cảm biến, phát hiện quá tải và ghi cảnh báo. Grafana hiển thị cảnh báo; người trực bấm "Tiếp nhận" và FastAPI ghi nhận.
 
 ```mermaid
 flowchart LR
-    subgraph T1["Tầng 1 - Chuẩn bị offline (Python)"]
-        CSV[("ETTm1, ETTm2")] --> PREP["EDA, làm sạch, hiệu chuẩn, ánh xạ 4 trạm, bơm sự cố"]
+    subgraph T1["Tầng 1 - Chuẩn bị offline (Python, notebook)"]
+        ETT[("ETTm1, ETTm2")] --> PREP["Phát hiện lỗi, định mức, tạo 4 trạm, bơm sự cố"]
+        PREP --> SCEN[("scenario_data.csv")]
+        PREP --> PAR[("param_threshold.csv")]
+        PREP --> LAB[("event_label.csv")]
     end
 
     subgraph T2["Tầng 2 - Kho dữ liệu (TimescaleDB)"]
-        RAW[("raw.sensor_reading")]
-        STG[("staging.sensor_reading")]
-        REF[("mart: dim, param")]
-        AGG[("mart.fact_reading_hourly / daily")]
-        ALERT[("mart.fact_alert")]
-        VIEW[("mart.v_latest_reading")]
-        RAW -->|"stored procedure + add_job, theo watermark"| STG
-        REF -.->|"rated_load"| STG
-        STG -->|"continuous aggregate"| AGG
-        STG --> VIEW
+        RAW[("raw")]
+        CLN[("cleaned")]
+        AGG[("agg_hourly")]
+        DIM[("dim_substation, dim_customer_group, param_threshold")]
+        ALERT[("fact_alert")]
+        EVAL[("eval.event_label")]
+        RAW -->|"ELT theo watermark, add_job"| CLN
+        DIM -.->|"rated_load"| CLN
+        CLN -->|"continuous aggregate"| AGG
     end
 
     subgraph T3["Tầng 3 - Phát hiện và phục vụ"]
-        DET["Detector (Python): DQ, 3 tầng, xếp hạng, vòng đời"]
+        PROD["Producer replay"]
+        DET["Detector (Python)"]
         GRAF["Grafana: 4 màn hình"]
         API["FastAPI /ack"]
     end
 
-    PREP -->|"dữ liệu kịch bản"| PROD["Producer replay"]
-    PREP -->|"CSV dim, param"| REF
-    PROD --> RAW
-    STG --> DET
-    REF -.-> DET
+    SCEN --> PROD --> RAW
+    PAR --> DIM
+    LAB --> EVAL
+    CLN --> DET
+    DIM -.-> DET
     DET --> ALERT
-    VIEW --> GRAF
+    CLN --> GRAF
     AGG --> GRAF
     ALERT --> GRAF
     GRAF -->|"link Tiếp nhận"| API
-    API -->|"cập nhật ACK"| ALERT
+    API -->|"status = ACK"| ALERT
     API -->|"chuyển hướng"| GRAF
+    EVAL -.->|"chỉ dùng khi đánh giá"| EV["evaluate.ipynb"]
 ```
 
 ## 2. Các tầng
 
 ### Tầng 1: Chuẩn bị offline (Python, Jupyter)
-- **EDA:** chu kỳ tải, phân phối, P95/P99, độ trễ giữa tải và nhiệt độ dầu (OT).
-- **Hiệu chuẩn trên 16 tháng đầu:**
-  - `rated_load` = P99(HUFL) × hệ số trạm.
-  - Ngưỡng bật/tắt cảnh báo.
-  - Hồ sơ z-score theo giờ × thứ.
-- **Tạo 4 trạm:**
-  - Trạm 1–2 là ETT gốc (REAL).
-  - Trạm 3–4 được dời 7–14 ngày và thêm nhiễu (DERIVED).
-- **Bơm sự cố** (SIMULATED) và ghi nhãn sự cố vào `eval_event_label`.
-- **Đầu ra:** dữ liệu kịch bản cho 8 tháng cuối và các file CSV tham chiếu.
+| Task | Đầu ra | Nội dung |
+|---|---|---|
+| 1.1 Hiểu dữ liệu | `known_anomaly.csv` | 40 đoạn bất thường; đoạn lỗi bị loại khỏi hiệu chuẩn |
+| 1.2 Định mức | `param_threshold.csv` | `rated_load = P99(S_H) × k`, tính trên 16 tháng đầu đã bỏ đoạn lỗi; ngưỡng Vàng/Đỏ/đóng |
+| 1.3 Kịch bản | `scenario_data.csv`, `event_label.csv` | 4 trạm × 8 tháng kiểm thử; 9 sự cố quá tải bơm vào; đáp án 38 sự cố |
 
-### Tầng 2: Kho dữ liệu ELT (TimescaleDB, toàn bộ bằng SQL)
+- **Tải trạm:** `S_H = √(HUFL² + HULL²)`.
+- **4 trạm:** Trạm Y và Trạm 2 dùng ETT gốc (REAL). Trạm 3 và Trạm 4 dời +7 và +14 ngày (DERIVED).
+
+### Tầng 2: Kho dữ liệu ELT (TimescaleDB)
+Toàn bộ schema nằm trong `db/init/001_schema.sql`. File `002_load_data.sql` nạp 2 file CSV.
 
 | Lớp | Đối tượng | Cơ chế |
 |---|---|---|
-| Raw (Bronze) | `raw.sensor_reading` | Producer ghi nguyên vẹn. Dùng `ON CONFLICT DO NOTHING` nên chạy lại không bị trùng |
-| Staging (Silver) | `staging.sensor_reading` | Stored procedure chạy định kỳ bằng `add_job`, chỉ xử lý dữ liệu mới theo `etl_watermark` |
-| Mart (Gold) | `fact_reading_hourly`, `fact_reading_daily` | Continuous aggregate, tự refresh bằng policy, có real-time aggregation |
-| Mart (Gold) | `fact_alert` | Do detector ghi và cập nhật |
-| Mart (Gold) | `v_latest_reading` | View lấy bản ghi mới nhất của từng trạm |
+| Raw | `raw` (hypertable) | Producer ghi nguyên vẹn, `ON CONFLICT (station_id, ts) DO NOTHING` nên chạy lại không trùng |
+| Cleaned | `cleaned` (hypertable) | Thủ tục ELT chạy định kỳ bằng `add_job`, chỉ xử lý bản ghi mới theo `etl_watermark` (riêng từng trạm); tính `s_h`, `load_pct` |
+| Tổng hợp | `agg_hourly` | Continuous aggregate, tự refresh mỗi phút, có real-time aggregation |
+| Cảnh báo | `fact_alert` | Detector ghi; FastAPI cập nhật ACK |
+| Đáp án | `eval.event_label` | Schema riêng, chỉ dùng khi đánh giá |
+| View | `v_station_latest`, `v_alert_queue` | Phục vụ màn hình tổng quan và danh sách cảnh báo |
 
 ### Tầng 3: Phát hiện và phục vụ
-- **Detector (Python, chạy vòng lặp định kỳ):** đọc Staging rồi xử lý theo thứ tự:
-  1. Kiểm tra chất lượng theo cửa sổ thời gian.
-  2. Chạy 3 tầng phát hiện: ngưỡng, z-score, xu hướng kèm time-to-breach.
-  3. Phân mức Đỏ/Vàng.
-  4. Tính điểm ưu tiên.
-  5. Quản lý vòng đời và ghi vào `fact_alert`.
-- **Grafana:** chỉ đọc lớp Mart. Dashboard tự làm mới mỗi 5–10 giây.
-- **FastAPI:** nhận link "Tiếp nhận" từ Grafana, cập nhật `status`, `acked_at`, `acked_by`, rồi chuyển người dùng về lại Grafana.
+- **Producer:** đọc `scenario_data.csv`, ghi từng dòng vào `raw` theo thứ tự `ts`. Tham số `--speed` (×1, ×10, ×60…) và `--start` (ngày bắt đầu phát).
+- **Detector:** đọc `cleaned`, xử lý từng bản ghi theo thứ tự `ts` của dữ liệu:
+  1. **Kiểm tra cảm biến:** `s_h` không đổi ≥ 4 bản ghi → cảnh báo SENSOR, bỏ qua bước 2.
+  2. **Kiểm tra quá tải:** tốc độ = `load_pct` − `load_pct` 1 giờ trước; TTB = (100 − `load_pct`) / tốc độ × 60.
+     - Đỏ: ≥ 100% hoặc TTB ≤ 30 phút.
+     - Vàng: ≥ 90% hoặc TTB ≤ 60 phút.
+  3. **Vòng đời:** mở mới, cập nhật hoặc nâng Vàng → Đỏ. Đóng khi < 85% ở 2 lần đo liên tiếp.
+  - Hai chế độ dùng chung một hàm phát hiện: `--source db` ghi `fact_alert`; `--source csv` xuất `alerts_A.csv` / `alerts_B.csv` cho đánh giá.
+- **Grafana:** đọc `cleaned`, `agg_hourly`, `fact_alert` và các view; tự làm mới mỗi 5–10 giây.
+- **FastAPI:** `GET /ack?alert_id=…&user=…` → `status = ACK`, ghi `acked_by`, `acked_at = now()`, rồi chuyển về Grafana.
 
 ## 3. Luồng xử lý một bản ghi
-1. Producer ghi bản ghi vào Raw. Lúc này `ingested_at` = thời điểm ghi.
-2. Job ELT chuyển bản ghi sang Staging, gồm các bước:
-   - tính `total_load = HUFL`, `load_pct`, `balance_gap`;
-   - gắn `dq_flag`;
-   - ghi `processed_at`.
-3. Continuous aggregate tự cập nhật giá trị theo giờ và theo ngày.
-4. Detector đọc bản ghi mới, rồi mở, nâng mức hoặc đóng cảnh báo trong `fact_alert`.
-5. Grafana hiển thị cảnh báo. Người vận hành bấm "Tiếp nhận", FastAPI ghi nhận ACK.
+1. Producer ghi bản ghi vào `raw` (`ingested_at` = giờ ghi).
+2. Job ELT chuyển sang `cleaned`, tính `s_h`, `load_pct`, ghi `processed_at`, rồi cập nhật watermark.
+3. `agg_hourly` tự cập nhật.
+4. Detector đọc bản ghi mới; mở, nâng mức hoặc đóng cảnh báo trong `fact_alert` (`opened_at` = giờ ghi).
+5. Grafana hiển thị cảnh báo; người trực bấm "Tiếp nhận" → `acked_at`.
 
-Độ trễ end-to-end được đo bằng chênh lệch giữa `ingested_at`, `processed_at` và `opened_at`.
+- **Độ trễ hệ thống** = `opened_at` − `ingested_at`.
+- **Thời gian phản ứng của người trực** = `acked_at` − `opened_at`.
 
 ## 4. Quyết định thiết kế
 
 | Quyết định | Lý do |
 |---|---|
-| 3 lớp raw → staging → mart | Tách rõ dữ liệu gốc, dữ liệu đã làm sạch và dữ liệu phục vụ; dễ truy vết khi có lỗi |
-| Dim và param là dữ liệu tham chiếu, nạp trước pipeline | Staging cần `rated_load` để tính `load_pct`. Đây là ngoại lệ có chủ đích cho quy tắc "lớp dưới không đọc lớp trên" |
-| Chia việc kiểm tra chất lượng: Staging xét từng dòng, Detector xét theo cửa sổ thời gian | Stored procedure không phát hiện được lỗi kéo dài như đứng yên hay mất dữ liệu |
-| Grafana chỉ đọc Mart | Giữ đúng phân lớp, dashboard không phụ thuộc vào cấu trúc Staging |
-| Tách `eval_alert` khỏi `fact_alert` | Thực nghiệm 3 phương pháp không làm lẫn cảnh báo trên dashboard vận hành |
-| Không dùng `dim_time` | Kho chuỗi thời gian dùng trực tiếp `ts` với `time_bucket` và `EXTRACT` |
-| Chỉ hiệu chuẩn trên 16 tháng đầu | Tránh rò rỉ dữ liệu sang giai đoạn đánh giá |
+| Hai đồng hồ: `*_ts` là thời gian dữ liệu, `*_at` là giờ thật | Phát hiện và đánh giá không phụ thuộc tốc độ replay; giờ thật chỉ dùng đo người phản ứng |
+| Giữ `ts` gốc 2017–2018, không dời về hiện tại | Đáp án `event_label` khớp trực tiếp, không cần dời theo. Grafana chọn khoảng thời gian theo dữ liệu, múi giờ UTC |
+| `raw` và `cleaned` không có cột nhãn nguồn | Detector không thể "nhìn trộm" đáp án |
+| Đáp án ở schema `eval` riêng | Tách rõ dữ liệu vận hành và dữ liệu đánh giá |
+| Đánh giá dùng `run_id` (LIVE / EVAL_A / EVAL_B / DRILL) trong cùng `fact_alert` | Không cần bảng riêng; dashboard lọc `run_id = 'LIVE'` |
+| Mỗi (run, trạm, loại) chỉ 1 cảnh báo đang mở | Một sự cố chỉ tạo 1 cảnh báo, danh sách gọn |
+| Watermark tính riêng từng trạm | Producer ghi xen kẽ 4 trạm cùng `ts`; một mốc chung có thể bỏ sót trạm |
+| Xếp hạng theo mức → TTB → `load_pct`, không tính điểm có trọng số | Đơn giản, dễ giải thích, không phải chốt trọng số |
+| Không dùng `dim_time` | Kho chuỗi thời gian dùng thẳng `ts` với `time_bucket` |
+| Mọi tham số chỉ tính trên 16 tháng đầu | Tránh rò rỉ dữ liệu sang giai đoạn kiểm thử |
 
 ## 5. Công nghệ
 
 | Thành phần | Công nghệ |
 |---|---|
 | Chuẩn bị dữ liệu | Python, pandas, numpy, matplotlib, Jupyter |
-| Ingestion | Python + psycopg |
-| Kho dữ liệu | TimescaleDB (PostgreSQL 16): hypertable, continuous aggregate, job scheduler |
-| Phát hiện | Python (pandas, psycopg) |
+| Producer, detector | Python + psycopg |
+| Kho dữ liệu | TimescaleDB ≥ 2.13 (PostgreSQL 16): hypertable, continuous aggregate, job scheduler |
 | Dashboard | Grafana (datasource PostgreSQL) |
 | API tiếp nhận | FastAPI + Uvicorn |
 | Hạ tầng | Docker Compose |
 
-## 6. Vấn đề còn mở
-- **Thời gian replay:** dữ liệu gốc có `ts` thuộc năm 2017–2018. Cần chốt một trong hai cách:
-  - Cách A: giữ `ts` gốc, Grafana hiển thị theo `max(ts)` có trong DB.
-  - Cách B: producer dời `ts` về thời điểm hiện tại, và dời cả nhãn sự cố tương ứng.
+## 6. Hạn chế
+- Chỉ có 2 trạm thật; Trạm 3 và Trạm 4 là bản dời ngày.
+- Sự cố bơm chỉ nằm trong 01–02/2018, vì chỉ mùa đông tải buổi tối mới đủ cao.
+- Cần 1 giờ (4 bản ghi) mới nhận ra cảm biến đứng yên.
+- TTB giả định tải tăng đều; khi tải chững lại, dự báo bi quan hơn thực tế.

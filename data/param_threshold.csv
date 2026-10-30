@@ -1,0 +1,5 @@
+station_id,source,p99_sh,k,rated_load,yellow_pct,red_pct,yellow_ttb_min,red_ttb_min,close_pct,close_records,stuck_records
+TRAM_Y,ETTm1,19.479,1.05,20.45,90,100,60,30,85,2,4
+TRAM_2,ETTm2,62.151,1.11,68.99,90,100,60,30,85,2,4
+TRAM_3,ETTm1,19.484,1.43,27.86,90,100,60,30,85,2,4
+TRAM_4,ETTm2,62.207,1.11,69.05,90,100,60,30,85,2,4

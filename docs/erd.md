@@ -1,183 +1,318 @@
 # ERD – Kho dữ liệu
 
 ## 1. Tổng quan
-Kho dữ liệu chia thành 3 lớp:
-- **raw:** dữ liệu nguyên vẹn.
-- **staging:** dữ liệu đã làm sạch.
-- **mart:** mô hình dim/fact phục vụ dashboard và đánh giá.
+Kho chia thành 4 lớp. Mọi bảng nối với `dim_substation` qua khóa `station_id`.
 
-Mọi bảng đều xoay quanh `mart.dim_substation`, nối qua khóa `substation_id`.
+| Lớp | Bảng | Vai trò |
+|---|---|---|
+| Tham chiếu | `dim_substation`, `dim_customer_group`, `param_threshold` | Mô tả trạm, khách hàng, định mức và ngưỡng |
+| Cảm biến | `raw` → `cleaned` → `agg_hourly`, `etl_watermark` | Số liệu đo 15 phút, đã làm sạch và tổng hợp theo giờ |
+| Cảnh báo | `fact_alert` | Mỗi dòng là 1 cảnh báo và vòng đời của nó |
+| Đánh giá | `eval.event_label` | Đáp án sự cố, schema riêng, detector không đọc |
+
+Phần 6 gộp các lớp trên thành star schema.
+
+---
+
+## 2. Lớp tham chiếu
 
 ```mermaid
 erDiagram
-    mart_dim_substation {
-        smallint substation_id PK
-        text display_name
-        text source_series
-        text reading_source_type
-        numeric rating_factor
-        float rated_load
-        smallint criticality
-        smallint neighbor_substation_id FK
-    }
-    mart_dim_customer_group {
-        smallint customer_group_id PK
-        smallint substation_id FK
-        char voltage_side
-        text group_name
-        numeric load_share
-        smallint shed_priority
-        boolean is_critical
-    }
-    mart_scenario_mapping {
-        smallint substation_id PK, FK
-        text mapping_version PK
+    dim_substation {
+        text station_id PK
+        text station_name
+        text source
         smallint shift_days
-        numeric noise_pct
+        text data_origin
+        smallint importance
+        text neighbor_station_id FK
+        text note
     }
-    mart_param_threshold {
-        smallint substation_id PK, FK
-        text metric PK
-        text severity PK
-        float on_value
-        float off_value
+    dim_customer_group {
+        text group_id PK
+        text station_id FK
+        text group_name
+        text customer_type
+        numeric load_share_pct
+        boolean is_priority
+        text note
     }
-    mart_param_profile {
-        smallint substation_id PK, FK
-        text metric PK
-        smallint day_of_week PK
-        smallint hour_of_day PK
-        float mean_value
-        float std_value
-    }
-    raw_sensor_reading {
-        timestamptz ts PK
-        smallint substation_id PK
-        float hufl_to_lull_ot
-        text source_type
-        timestamptz ingested_at
-    }
-    staging_sensor_reading {
-        timestamptz ts PK
-        smallint substation_id PK, FK
-        float total_load
-        float load_pct
-        float balance_gap
-        smallint dq_flag
-        text source_type
-    }
-    mart_fact_reading_hourly {
-        timestamptz bucket
-        smallint substation_id
-        float avg_load_pct
-        float max_load_pct
-        float max_ot
-    }
-    mart_fact_reading_daily {
-        timestamptz bucket
-        smallint substation_id
-        float avg_load_pct
-        float max_load_pct
-        float max_ot
-    }
-    mart_fact_alert {
-        bigint alert_id PK
-        smallint substation_id FK
-        text alert_type
-        text severity
-        text status
-        numeric priority_score
-        float time_to_breach_min
-        timestamptz opened_at
-        timestamptz acked_at
-        timestamptz resolved_at
-    }
-    mart_eval_event_label {
-        text event_id PK
-        smallint substation_id FK
-        text event_type
-        timestamptz t_start
-        timestamptz t_breach
-        timestamptz t_end
-    }
-    mart_eval_alert {
-        bigint alert_id PK
-        smallint substation_id FK
-        text method
-        text run_id
+    param_threshold {
+        text station_id PK, FK
+        text source
+        float p99_sh
+        float k
+        float rated_load
+        smallint yellow_pct
+        smallint red_pct
+        smallint yellow_ttb_min
+        smallint red_ttb_min
+        smallint close_pct
+        smallint close_records
+        smallint stuck_records
     }
 
-    mart_dim_substation |o--o{ mart_dim_substation : "nhận chuyển tải"
-    mart_dim_substation ||--o{ mart_dim_customer_group : "phục vụ"
-    mart_dim_substation ||--o{ mart_scenario_mapping : "ánh xạ"
-    mart_dim_substation ||--o{ mart_param_threshold : "ngưỡng"
-    mart_dim_substation ||--o{ mart_param_profile : "hồ sơ z-score"
-    raw_sensor_reading }o--|| mart_dim_substation : "ELT"
-    mart_dim_substation ||--o{ staging_sensor_reading : "đo tại"
-    staging_sensor_reading ||--o{ mart_fact_reading_hourly : "tổng hợp"
-    staging_sensor_reading ||--o{ mart_fact_reading_daily : "tổng hợp"
-    mart_dim_substation ||--o{ mart_fact_alert : "cảnh báo"
-    mart_dim_substation ||--o{ mart_eval_event_label : "sự cố"
-    mart_dim_substation ||--o{ mart_eval_alert : "thực nghiệm"
+    dim_substation |o--o{ dim_substation : "nhận chuyển tải"
+    dim_substation ||--o{ dim_customer_group : "phục vụ"
+    dim_substation ||--|| param_threshold : "định mức, ngưỡng"
 ```
 
-## 2. Danh mục bảng
-
-### Dữ liệu cảm biến
-
-| Bảng | Loại | Grain (1 dòng là gì) | Khóa | Người ghi |
-|---|---|---|---|---|
-| raw.sensor_reading | Hypertable | 1 trạm × 15 phút | (substation_id, ts) | Producer |
-| staging.sensor_reading | Hypertable | 1 trạm × 15 phút | (substation_id, ts) | Job ELT |
-| staging.etl_watermark | Bảng thường | 1 job ELT | job_name | Job ELT |
-
-### Fact (Mart)
-
-| Bảng | Loại fact | Grain | Measure chính |
+| Bảng | Grain | Nội dung | Nguồn |
 |---|---|---|---|
-| fact_reading_hourly | Periodic snapshot (continuous aggregate) | 1 trạm × 1 giờ | avg/max load_pct, max ot, n_readings, n_dq_issues |
-| fact_reading_daily | Periodic snapshot (continuous aggregate) | 1 trạm × 1 ngày | Như trên |
-| fact_alert | Accumulating snapshot | 1 cảnh báo | priority_score và 4 điểm thành phần, time_to_breach_min, thời gian tiếp nhận và xử lý |
+| dim_substation | 1 trạm | Nguồn ETT, số ngày dời, REAL/DERIVED, độ quan trọng (1–3), trạm lân cận | `001_schema.sql` (SIMULATED) |
+| dim_customer_group | 1 nhóm khách hàng | Loại khách hàng, % tải của trạm, có ưu tiên giữ điện hay không | `001_schema.sql` (SIMULATED) |
+| param_threshold | 1 trạm | `rated_load = p99_sh × k`; ngưỡng Vàng 90 / Đỏ 100 / đóng 85; TTB 60 / 30; đứng yên 4 bản ghi | `param_threshold.csv` (Task 1.2) |
 
-### Dimension và tham chiếu (Mart)
+- **Tự tham chiếu:** TRAM_Y → TRAM_3 và TRAM_2 → TRAM_4. Khóa ngoại đặt `DEFERRABLE` nên nạp dữ liệu không cần đúng thứ tự dòng.
+- **Quan hệ 1–1** giữa `dim_substation` và `param_threshold`: mỗi trạm đúng 1 dòng tham số.
 
-| Bảng | Nội dung | Người tạo dữ liệu |
-|---|---|---|
-| dim_substation | 4 trạm: hệ số định mức, rated_load, độ quan trọng, trạm lân cận | Trọng (rated_load do Thiện điền) |
-| dim_customer_group | Nhóm khách hàng theo trạm và phía áp, kèm thứ tự sa thải | Trọng |
-| scenario_mapping | Cách tạo trạm DERIVED: số ngày dời, mức nhiễu, seed | Trọng |
-| param_threshold | Ngưỡng bật/tắt theo trạm, chỉ số và mức cảnh báo | Thiện |
-| param_profile | Mean và std theo trạm × thứ × giờ | Thiện |
+---
 
-### Đánh giá (Mart)
+## 3. Lớp cảm biến
 
-| Bảng | Nội dung | Người tạo dữ liệu |
-|---|---|---|
-| eval_event_label | Nhãn sự cố đã bơm (đáp án): t_start, t_breach, t_end | Văn |
-| eval_alert | Cảnh báo sinh ra khi chạy 3 phương pháp, phân biệt bằng method và run_id | Detector (chế độ thực nghiệm) |
+```mermaid
+erDiagram
+    dim_substation {
+        text station_id PK
+    }
+    raw {
+        timestamp ts PK
+        text station_id PK, FK
+        float hufl
+        float hull
+        float mufl
+        float mull
+        float lufl
+        float lull
+        float ot
+        timestamptz ingested_at
+    }
+    cleaned {
+        timestamp ts PK
+        text station_id PK, FK
+        float hufl_to_lull "6 cột tải như raw"
+        float ot
+        float s_h
+        float load_pct
+        text quality_flag
+        timestamptz processed_at
+    }
+    agg_hourly {
+        timestamp bucket
+        text station_id
+        float avg_load_pct
+        float max_load_pct
+        float avg_ot
+        float max_ot
+        bigint n_records
+    }
+    etl_watermark {
+        text job_name PK
+        text station_id PK, FK
+        timestamp last_ts
+        timestamptz updated_at
+    }
 
-### View
-- **v_latest_reading:** bản ghi mới nhất của từng trạm, kèm tên trạm và độ quan trọng. Grafana dùng view này cho màn hình tổng quan.
+    dim_substation ||--o{ raw : "đo tại"
+    raw ||--|| cleaned : "ELT"
+    dim_substation ||--o{ cleaned : "đo tại"
+    cleaned ||--o{ agg_hourly : "tổng hợp theo giờ"
+    dim_substation ||--o{ etl_watermark : "mốc đã xử lý"
+```
 
-## 3. Quan hệ
-- **dim_substation tự tham chiếu:** `neighbor_substation_id` trỏ tới trạm nhận chuyển tải. Ví dụ Trạm Y (id 1) trỏ tới Trạm 3. Khóa ngoại này được đặt `DEFERRABLE`, nên nạp CSV không cần đúng thứ tự dòng.
-- **dim_substation 1–n các bảng khác:** mọi bảng staging, fact, param và eval đều có khóa ngoại tới `dim_substation`.
-- **Raw không có khóa ngoại:** để giữ dữ liệu nguyên vẹn, kể cả dữ liệu sai. Quan hệ với dim chỉ mang tính logic.
-- **Continuous aggregate không có khóa ngoại:** đây là view tổng hợp từ Staging.
+| Bảng | Loại | Grain | Khóa | Người ghi |
+|---|---|---|---|---|
+| raw | Hypertable | 1 trạm × 15 phút | (station_id, ts) | Producer |
+| cleaned | Hypertable | 1 trạm × 15 phút | (station_id, ts) | Job ELT |
+| agg_hourly | Continuous aggregate | 1 trạm × 1 giờ | (bucket, station_id) | TimescaleDB, refresh mỗi phút |
+| etl_watermark | Bảng thường | 1 job × 1 trạm | (job_name, station_id) | Job ELT |
 
-## 4. Quy ước
+- `s_h = √(hufl² + hull²)`; `load_pct = s_h / rated_load × 100`.
+- `raw` và `cleaned` **không có cột nhãn nguồn**, nên detector không thể nhìn đáp án.
+- `n_records < 4` trong `agg_hourly` nghĩa là giờ đó thiếu bản ghi.
+
+---
+
+## 4. Lớp cảnh báo
+
+```mermaid
+erDiagram
+    dim_substation {
+        text station_id PK
+    }
+    param_threshold {
+        text station_id PK, FK
+    }
+    fact_alert {
+        bigint alert_id PK
+        text run_id
+        text station_id FK
+        text alert_type "OVERLOAD / SENSOR"
+        text severity "RED / YELLOW / SENSOR"
+        text trigger_rule "THRESHOLD / TTB / STUCK / MISSING"
+        text status "OPEN / ACK / RESOLVED"
+        timestamp opened_ts
+        timestamp escalated_ts
+        timestamp last_ts
+        timestamp resolved_ts
+        timestamptz opened_at
+        timestamptz acked_at
+        text acked_by
+        timestamptz resolved_at
+        float load_pct
+        float peak_load_pct
+        float ttb_min
+        float speed_pct_h
+        smallint below_close_count
+        timestamptz updated_at
+    }
+
+    dim_substation ||--o{ fact_alert : "cảnh báo"
+    dim_substation ||--|| param_threshold : "ngưỡng dùng để phát hiện"
+```
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Loại fact | Accumulating snapshot (1 dòng được cập nhật suốt vòng đời) |
+| Grain | 1 cảnh báo |
+| Measure | `load_pct`, `peak_load_pct`, `ttb_min`, `speed_pct_h` |
+| Mốc dữ liệu | `opened_ts` → `escalated_ts` (lên Đỏ) → `resolved_ts` |
+| Mốc giờ thật | `opened_at` → `acked_at` → `resolved_at` |
+| Người ghi | Detector (mở, cập nhật, đóng); FastAPI (ACK) |
+
+- **Vòng đời:** OPEN → ACK → RESOLVED. Cảnh báo đóng khi `below_close_count` đạt `close_records` (2). RESOLVED mà chưa ACK được tính là bị bỏ lỡ.
+- **`run_id`:** LIVE (dashboard), EVAL_A, EVAL_B (đánh giá), DRILL (diễn tập). Không có bảng `eval_alert` riêng.
+
+---
+
+## 5. Lớp đánh giá
+
+```mermaid
+erDiagram
+    dim_substation {
+        text station_id PK
+    }
+    eval_event_label {
+        text event_id PK
+        text station_id FK
+        text type "OVERLOAD / SENSOR"
+        timestamp t_start
+        timestamp t_breach "chỉ OVERLOAD"
+        timestamp t_end
+        text source_type "REAL / SIMULATED"
+        text detail
+    }
+    fact_alert {
+        bigint alert_id PK
+        text run_id
+        text station_id FK
+        text alert_type
+        timestamp opened_ts
+        timestamp escalated_ts
+    }
+
+    dim_substation ||--o{ eval_event_label : "sự cố"
+    eval_event_label |o..o{ fact_alert : "khớp khi đánh giá"
+```
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Bảng | `eval.event_label` (schema `eval`) |
+| Grain | 1 sự cố |
+| Nội dung | 38 sự cố: 9 OVERLOAD SIMULATED, 9 OVERLOAD REAL (Trạm Y), 20 SENSOR REAL |
+| `detail` | INJECTED_RAMP, REAL_PEAK, DAY31_FILL, STUCK_HV |
+| Nguồn | `event_label.csv` (Task 1.3) |
+
+- **Quan hệ khớp với `fact_alert` là logic, không có khóa ngoại.** Một cảnh báo khớp một sự cố khi cùng `station_id`, cùng loại, và `opened_ts` ∈ [`t_start`, `t_end` + 1 giờ]. Nhiều cảnh báo cho cùng một sự cố chỉ tính 1 lần.
+- **Chỉ số đánh giá:**
+  - Độ trễ phát hiện = `opened_ts` − `t_start`.
+  - Lead time = `t_breach` − `escalated_ts`.
+
+---
+
+## 6. Star schema
+Hai bảng fact dùng chung dimension `dim_substation`. `param_threshold` và `dim_customer_group` là nhánh mở rộng của trạm (snowflake). Thời gian dùng trực tiếp cột `ts`, không có `dim_time`.
+
+```mermaid
+erDiagram
+    dim_substation {
+        text station_id PK
+        text station_name
+        text data_origin
+        smallint importance
+        text neighbor_station_id FK
+    }
+    param_threshold {
+        text station_id PK, FK
+        float rated_load
+    }
+    dim_customer_group {
+        text group_id PK
+        text station_id FK
+        text customer_type
+        boolean is_priority
+    }
+    cleaned {
+        timestamp ts PK
+        text station_id PK, FK
+        float s_h
+        float load_pct
+        float ot
+    }
+    agg_hourly {
+        timestamp bucket
+        text station_id
+        float avg_load_pct
+        float max_load_pct
+    }
+    fact_alert {
+        bigint alert_id PK
+        text station_id FK
+        text severity
+        text status
+        float peak_load_pct
+        float ttb_min
+    }
+
+    dim_substation ||--o{ cleaned : "FACT số liệu đo"
+    dim_substation ||--o{ fact_alert : "FACT cảnh báo"
+    cleaned ||--o{ agg_hourly : "tổng hợp"
+    dim_substation ||--|| param_threshold : "định mức"
+    dim_substation ||--o{ dim_customer_group : "khách hàng"
+```
+
+| Bảng | Vai trò | Grain | Dùng cho màn hình |
+|---|---|---|---|
+| cleaned | Fact số liệu đo (transaction) | 1 trạm × 15 phút | 1 Tổng quan, 3 Chi tiết Red Alert |
+| agg_hourly | Fact tổng hợp (periodic snapshot) | 1 trạm × 1 giờ | 1 Xu hướng 24 giờ, 4 KPI |
+| fact_alert | Fact cảnh báo (accumulating snapshot) | 1 cảnh báo | 2 Danh sách cảnh báo, 4 KPI |
+| dim_substation | Dimension trung tâm | 1 trạm | Tất cả |
+| param_threshold | Mở rộng của trạm | 1 trạm | 3 Lượng cần giảm, công suất dư Trạm 3 |
+| dim_customer_group | Mở rộng của trạm | 1 nhóm khách hàng | 3 Nhóm khách hàng bị ảnh hưởng |
+
+**View phục vụ dashboard**
+| View | Nội dung |
+|---|---|
+| v_station_latest | Bản ghi mới nhất mỗi trạm, kèm `rated_load` và mức NORMAL / YELLOW / RED |
+| v_alert_queue | Cảnh báo đang mở lên trước; xếp Đỏ → Vàng → SENSOR, rồi TTB ngắn, rồi `load_pct` cao; có `is_missed`, `response_sec` |
+
+---
+
+## 7. Quy ước
 
 | Quy ước | Ý nghĩa |
 |---|---|
-| `source_type` | REAL = ETT gốc. DERIVED = dời thời gian và thêm nhiễu. SIMULATED = sự cố bơm vào |
-| `attr_source = SIMULATED` | Thuộc tính trong dim do nhóm tự tạo, không phải dữ liệu thực tế |
-| `dq_flag` (bitmask) | 0 = OK, 1 = có NULL, 2 = giá trị âm, 4 = lệch cân bằng H ≠ M + L |
-| Thời gian sự kiện và thời gian xử lý | `ts`, `first_ts`, `t_start` thuộc thời gian dữ liệu, dùng để đánh giá. `ingested_at`, `processed_at`, `opened_at`, `acked_at` thuộc thời gian hệ thống, dùng để đo độ trễ và KPI |
-| `day_of_week` | Theo ISO: 1 = Thứ 2, …, 7 = Chủ nhật. Khi so sánh phải dùng `EXTRACT(ISODOW ...)` |
-| Vòng đời cảnh báo | OPEN → ACKNOWLEDGED → RESOLVED. Tự RESOLVED khi `below_off_count` đạt 2 |
+| `station_id` | TRAM_Y, TRAM_2, TRAM_3, TRAM_4 |
+| `*_ts` (TIMESTAMP) | Thời gian dữ liệu (2017–2018); dùng cho phát hiện và đánh giá |
+| `*_at` (TIMESTAMPTZ) | Giờ thật (`now()`); dùng đo độ trễ và thời gian phản ứng |
+| `data_origin` | Trong `dim_substation`. REAL = ETT gốc; DERIVED = dời ngày |
+| `source_type` | Chỉ có trong `eval.event_label`. REAL = có sẵn trong dữ liệu gốc; SIMULATED = nhóm bơm vào |
 
-## 5. Ràng buộc quan trọng
-- **Chống trùng cảnh báo:** unique index `ux_alert_active (substation_id, alert_type) WHERE status <> 'RESOLVED'`. Mỗi trạm chỉ có 1 cảnh báo đang mở cho mỗi loại.
-- **Hysteresis:** `param_threshold` có `CHECK (off_value < on_value)`.
-- **Nhãn sự cố hợp lệ:** `t_start < t_end`, và `t_breach` (nếu có) nằm trong khoảng [t_start, t_end].
-- **Điểm ưu tiên:** mọi điểm số nằm trong khoảng 0–1.
+## 8. Ràng buộc quan trọng
+- **Chống trùng:** `ux_alert_one_open (run_id, station_id, alert_type) WHERE status IN ('OPEN','ACK')`.
+- **Loại khớp mức:** SENSOR ↔ severity SENSOR; OVERLOAD ↔ RED / YELLOW.
+- **ACK hợp lệ:** status ACK bắt buộc có `acked_at` và `acked_by`.
+- **Đóng hợp lệ:** status RESOLVED ⇔ có `resolved_ts`.
+- **Lên Đỏ:** có `escalated_ts` thì severity phải là RED.
+- **Ngưỡng hợp lệ:** `close_pct < yellow_pct < red_pct`; `red_ttb_min < yellow_ttb_min`.
+- **Nhãn sự cố:** `t_start ≤ t_end`; OVERLOAD bắt buộc có `t_breach` ∈ [`t_start`, `t_end`]; SENSOR không có `t_breach`.
