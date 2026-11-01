@@ -20,7 +20,7 @@ scenario_data.csv → Producer → raw → cleaned → agg_hourly
 | `grafana`     | Grafana            | 3000      | 4-screen dashboard                     |
 | `api`         | FastAPI + Uvicorn  | 8000      | Alert acknowledgement (`/ack`)         |
 
-Producer and detector are added in later tasks.
+Producer and detector are added in later tasks (`feature/data-pipeline`, `feature/alert-detection`).
 
 ## Project structure
 
@@ -107,7 +107,40 @@ curl localhost:8000/health        # {"status":"ok"}
 ```
 
 Grafana: Connections → Data sources → TimescaleDB → **Save & test**.
-Set the dashboard time zone to **UTC**; otherwise data times are shown shifted by +7 hours.
+The provisioned dashboard already uses time zone **UTC**; for new dashboards set UTC, otherwise data times are shown shifted by +7 hours.
+
+## Dashboard and alert acknowledgement
+
+`grafana/dashboards/dashboard.json` is provisioned automatically into folder **Energy IoT** → **Energy Alert**
+(http://localhost:3000/d/energy-alert/energy-alert). Auto-refresh 5 s, time zone UTC.
+Colours: **Red** = overload ≥ 100 % or TTB ≤ 30 min, **Yellow** = ≥ 90 % or TTB ≤ 60 min, **Gray** = sensor fault.
+
+| Screen | Content | Source |
+|---|---|---|
+| 1. Overview | Current `load_pct` of 4 substations, status (Gray if an open SENSOR alert), `load_pct` over the last 24 h | `v_station_latest`, `cleaned`, `fact_alert` |
+| 2. Alert list | Red → Yellow → Sensor, then shortest TTB, then highest load; status column; **Tiếp nhận** link | `v_alert_queue` |
+| 3. Red Alert detail (variable *Trạm*) | `load_pct`, OT, speed, TTB, customer groups, spare capacity of TRAM_3 = 90 % × rated_load − S_H | `cleaned`, `v_station_latest`, `dim_customer_group` |
+| 4. KPI | Alerts per severity/substation, avg response time (`acked_at − opened_at`), unacknowledged, missed | `fact_alert` |
+
+The data is 2017–2018, so panels do not use the Grafana time picker: "last 24 h" means 24 h back from the newest
+record in `cleaned`, and the X axis is *hours relative to the newest record* (0 = now).
+The dashboard reads alerts with `run_id = 'LIVE'` (detector default for `--source db`).
+
+**Tiếp nhận** calls `GET http://localhost:8000/ack?alert_id=<id>&user=<grafana login>`:
+only an `OPEN` alert becomes `ACK` with `acked_by` and `acked_at = now()`; clicking again does not overwrite it.
+The API then redirects (303) back to the dashboard. Unknown `alert_id` → 404.
+
+Try the dashboard without producer/detector (**overwrites LIVE alerts and cleaned for 2017-11-01**):
+
+```bash
+docker compose exec -T timescaledb psql -U energy -d energy < sql/demo_dashboard_seed.sql
+# open the dashboard, click "Tiếp nhận" on the Trạm Y Red alert, then check:
+docker compose exec timescaledb psql -U energy -d energy \
+  -c "SELECT alert_id, status, acked_by, acked_at FROM fact_alert WHERE run_id='LIVE' ORDER BY alert_id"
+```
+
+If you edit the dashboard in the Grafana UI, export it (Share → Export → *Save to file*) back to
+`grafana/dashboards/dashboard.json` and keep `uid = energy-alert` (the API redirect uses it).
 
 ## Common commands
 
