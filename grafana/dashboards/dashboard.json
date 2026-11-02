@@ -1,0 +1,1379 @@
+{
+  "uid": "energy-alert",
+  "title": "Energy Alert",
+  "description": "Giám sát quá tải trạm biến áp: tổng quan, hàng đợi cảnh báo, chi tiết Red Alert, KPI.",
+  "tags": [
+    "energy",
+    "alert"
+  ],
+  "timezone": "utc",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
+  },
+  "links": [],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "station",
+        "label": "Trạm",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "timescaledb"
+        },
+        "query": "SELECT station_id AS __value, station_name AS __text FROM dim_substation ORDER BY importance DESC, station_id",
+        "definition": "SELECT station_id AS __value, station_name AS __text FROM dim_substation ORDER BY importance DESC, station_id",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 0,
+        "current": {
+          "text": "Trạm Y",
+          "value": "TRAM_Y",
+          "selected": true
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "1. Tổng quan – tải hiện tại 4 trạm",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "load_pct hiện tại",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 10,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT max(load_pct) FILTER (WHERE station_id = 'TRAM_Y') AS \"Trạm Y\",\n       max(load_pct) FILTER (WHERE station_id = 'TRAM_2') AS \"Trạm 2\",\n       max(load_pct) FILTER (WHERE station_id = 'TRAM_3') AS \"Trạm 3\",\n       max(load_pct) FILTER (WHERE station_id = 'TRAM_4') AS \"Trạm 4\"\nFROM v_station_latest"
+        }
+      ],
+      "description": "Bản ghi mới nhất của mỗi trạm trong cleaned. Vàng ≥ 90%, Đỏ ≥ 100%.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 90
+              },
+              {
+                "color": "#E02F44",
+                "value": 100
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Trạng thái trạm (bản ghi mới nhất)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 14,
+        "x": 10,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT l.station_name                AS \"Trạm\",\n       l.ts                          AS \"Thời điểm dữ liệu\",\n       round(l.s_h::numeric, 2)      AS \"S_H\",\n       round(l.rated_load::numeric, 2) AS \"Định mức\",\n       round(l.load_pct::numeric, 1) AS \"load_pct (%)\",\n       round(l.ot::numeric, 1)       AS \"OT (°C)\",\n       CASE WHEN EXISTS (SELECT 1 FROM fact_alert a\n                          WHERE a.run_id = 'LIVE' AND a.station_id = l.station_id\n                            AND a.alert_type = 'SENSOR' AND a.status <> 'RESOLVED')\n            THEN 'SENSOR' ELSE l.load_level END AS \"Mức\"\nFROM v_station_latest l\nORDER BY l.station_id"
+        }
+      ],
+      "description": "Mức = SENSOR (xám) khi trạm đang có cảnh báo lỗi cảm biến chưa đóng.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mức"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "RED": {
+                        "text": "Đỏ",
+                        "color": "#E02F44",
+                        "index": 0
+                      },
+                      "YELLOW": {
+                        "text": "Vàng",
+                        "color": "#FADE2A",
+                        "index": 1
+                      },
+                      "SENSOR": {
+                        "text": "Lỗi cảm biến",
+                        "color": "#8E8E8E",
+                        "index": 2
+                      },
+                      "NORMAL": {
+                        "text": "Bình thường",
+                        "color": "#56A64B",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "load_pct (%)"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": []
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "load_pct (%)"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#56A64B",
+                      "value": null
+                    },
+                    {
+                      "color": "#FADE2A",
+                      "value": 90
+                    },
+                    {
+                      "color": "#E02F44",
+                      "value": 100
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Thời điểm dữ liệu"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 4,
+      "type": "trend",
+      "title": "load_pct 24 giờ gần nhất (tính theo thời gian dữ liệu)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH m AS (SELECT max(ts) AS t FROM cleaned)\nSELECT round((extract(epoch FROM c.ts - m.t) / 3600.0)::numeric, 2) AS \"Giờ so với bản ghi mới nhất\",\n       max(c.load_pct) FILTER (WHERE c.station_id = 'TRAM_Y') AS \"Trạm Y\",\n       max(c.load_pct) FILTER (WHERE c.station_id = 'TRAM_2') AS \"Trạm 2\",\n       max(c.load_pct) FILTER (WHERE c.station_id = 'TRAM_3') AS \"Trạm 3\",\n       max(c.load_pct) FILTER (WHERE c.station_id = 'TRAM_4') AS \"Trạm 4\"\nFROM cleaned c, m\nWHERE c.ts > m.t - INTERVAL '24 hours'\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "description": "Trục X: số giờ so với bản ghi mới nhất (0 = hiện tại). Đường nét đứt: ngưỡng Vàng 90%, Đỏ 100%.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 90
+              },
+              {
+                "color": "#E02F44",
+                "value": 100
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisLabel": ""
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Giờ so với bản ghi mới nhất"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "h"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "Giờ so với bản ghi mới nhất",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "2. Danh sách cảnh báo – Đỏ → Vàng → Lỗi cảm biến, rồi TTB ngắn, rồi load_pct cao",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Hàng đợi cảnh báo",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT alert_id                         AS \"ID\",\n       station_name                     AS \"Trạm\",\n       severity                         AS \"Mức\",\n       alert_type                       AS \"Loại\",\n       status                           AS \"Trạng thái\",\n       round(load_pct::numeric, 1)      AS \"load_pct (%)\",\n       round(ttb_min::numeric, 0)       AS \"TTB (phút)\",\n       round(speed_pct_h::numeric, 1)   AS \"Tốc độ (%/giờ)\",\n       opened_ts                        AS \"Mở lúc (dữ liệu)\",\n       last_ts                          AS \"Cập nhật (dữ liệu)\",\n       acked_by                         AS \"Người nhận\",\n       acked_at                         AS \"Nhận lúc (giờ thật)\",\n       CASE WHEN status = 'OPEN' THEN 'Tiếp nhận' ELSE '' END AS \"Hành động\"\nFROM v_alert_queue\nWHERE run_id = 'LIVE'\n  AND (status <> 'RESOLVED' OR resolved_ts > (SELECT max(ts) FROM cleaned) - INTERVAL '24 hours')\nORDER BY (status = 'RESOLVED'), severity_rank, ttb_min ASC NULLS LAST, load_pct DESC NULLS LAST, alert_id\nLIMIT 100"
+        }
+      ],
+      "description": "Cảnh báo đang mở (OPEN/ACK) xếp trên; cảnh báo đã đóng trong 24 giờ dữ liệu gần nhất xếp dưới. Bấm \"Tiếp nhận\" để ACK.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mức"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "RED": {
+                        "text": "Đỏ",
+                        "color": "#E02F44",
+                        "index": 0
+                      },
+                      "YELLOW": {
+                        "text": "Vàng",
+                        "color": "#FADE2A",
+                        "index": 1
+                      },
+                      "SENSOR": {
+                        "text": "Lỗi cảm biến",
+                        "color": "#8E8E8E",
+                        "index": 2
+                      },
+                      "NORMAL": {
+                        "text": "Bình thường",
+                        "color": "#56A64B",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trạng thái"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "OPEN": {
+                        "text": "OPEN – chưa nhận",
+                        "color": "#E02F44",
+                        "index": 0
+                      },
+                      "ACK": {
+                        "text": "ACK – đã nhận",
+                        "color": "blue",
+                        "index": 1
+                      },
+                      "RESOLVED": {
+                        "text": "RESOLVED",
+                        "color": "#8E8E8E",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 60
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TTB (phút)"
+            },
+            "properties": [
+              {
+                "id": "noValue",
+                "value": "—"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mở lúc (dữ liệu)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cập nhật (dữ liệu)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nhận lúc (giờ thật)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hành động"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Tiếp nhận cảnh báo",
+                    "targetBlank": false,
+                    "url": "http://localhost:8000/ack?alert_id=${__data.fields.ID}&user=${__user.login}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "3. Chi tiết Red Alert – trạm: $station",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Trạm $station – hiện tại",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 14,
+        "x": 0,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH last5 AS (\n    SELECT ts, load_pct, ot FROM cleaned\n    WHERE station_id = '$station' ORDER BY ts DESC LIMIT 5),\nx AS (\n    SELECT ts, load_pct, ot, load_pct - lag(load_pct, 4) OVER (ORDER BY ts) AS speed FROM last5)\nSELECT load_pct AS \"load_pct\",\n       ot       AS \"OT\",\n       speed    AS \"Tốc độ\",\n       CASE WHEN speed > 0 THEN (100 - load_pct) / speed * 60 END AS \"TTB\"\nFROM x ORDER BY ts DESC LIMIT 1"
+        }
+      ],
+      "description": "Tốc độ = load_pct hiện tại − load_pct 4 bản ghi trước (%/giờ). TTB = (100 − load_pct) / tốc độ × 60; tải không tăng → không tính.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 90
+              },
+              {
+                "color": "#E02F44",
+                "value": 100
+              }
+            ]
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "load_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "OT"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tốc độ"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: %/giờ"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TTB"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "m"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "noValue",
+                "value": "Tải không tăng"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#E02F44",
+                      "value": null
+                    },
+                    {
+                      "color": "#FADE2A",
+                      "value": 30
+                    },
+                    {
+                      "color": "#56A64B",
+                      "value": 60
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Chuyển tải sang Trạm 3",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 14,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 0.9 * t3.rated_load - t3.s_h                       AS \"Công suất dư Trạm 3\",\n       greatest(sel.s_h - 0.9 * sel.rated_load, 0)        AS \"Phần vượt 90% của trạm đang chọn\"\nFROM v_station_latest t3, v_station_latest sel\nWHERE t3.station_id = 'TRAM_3' AND sel.station_id = '$station'"
+        }
+      ],
+      "description": "Công suất dư Trạm 3 = 90% × rated_load Trạm 3 − S_H Trạm 3 (cùng đơn vị với S_H). Dư ≥ phần vượt → có thể chuyển tải.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#E02F44",
+                "value": null
+              },
+              {
+                "color": "#56A64B",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Phần vượt 90% của trạm đang chọn"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 10,
+      "type": "trend",
+      "title": "Trạm $station – load_pct và OT 24 giờ gần nhất",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 14,
+        "x": 0,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH m AS (SELECT max(ts) AS t FROM cleaned WHERE station_id = '$station')\nSELECT round((extract(epoch FROM c.ts - m.t) / 3600.0)::numeric, 2) AS \"Giờ so với bản ghi mới nhất\",\n       c.load_pct AS \"load_pct\",\n       c.ot       AS \"OT\"\nFROM cleaned c, m\nWHERE c.station_id = '$station' AND c.ts > m.t - INTERVAL '24 hours'\nORDER BY c.ts"
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 90
+              },
+              {
+                "color": "#E02F44",
+                "value": 100
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisLabel": ""
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Giờ so với bản ghi mới nhất"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "h"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "load_pct"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#E02F44"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "OT"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.thresholdsStyle",
+                "value": {
+                  "mode": "off"
+                }
+              },
+              {
+                "id": "min",
+                "value": null
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "Giờ so với bản ghi mới nhất",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Nhóm khách hàng của trạm $station",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 10,
+        "x": 14,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT g.group_name                                    AS \"Nhóm\",\n       g.customer_type                                 AS \"Loại\",\n       g.load_share_pct                                AS \"Tỷ trọng (%)\",\n       round((g.load_share_pct / 100 * l.s_h)::numeric, 2) AS \"Tải ước tính\",\n       CASE WHEN g.is_priority THEN 'Ưu tiên giữ điện' ELSE '' END AS \"Ưu tiên\"\nFROM dim_customer_group g\nJOIN v_station_latest l USING (station_id)\nWHERE g.station_id = '$station'\nORDER BY g.is_priority DESC, g.load_share_pct DESC"
+        }
+      ],
+      "description": "Tải ước tính = tỷ trọng × S_H hiện tại. Dữ liệu nhóm khách hàng là SIMULATED.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ưu tiên"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#E02F44"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "4. KPI vận hành",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "barchart",
+      "title": "Số cảnh báo theo mức và trạm",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 47
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.station_name                                       AS \"Trạm\",\n       count(a.alert_id) FILTER (WHERE a.severity = 'RED')    AS \"Đỏ\",\n       count(a.alert_id) FILTER (WHERE a.severity = 'YELLOW') AS \"Vàng\",\n       count(a.alert_id) FILTER (WHERE a.severity = 'SENSOR') AS \"Lỗi cảm biến\"\nFROM dim_substation s\nLEFT JOIN fact_alert a ON a.station_id = s.station_id AND a.run_id = 'LIVE'\nGROUP BY s.station_id, s.station_name\nORDER BY s.station_id"
+        }
+      ],
+      "description": "Mức hiện tại của cảnh báo (cảnh báo Vàng đã lên Đỏ được tính là Đỏ).",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đỏ"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#E02F44"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vàng"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FADE2A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lỗi cảm biến"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8E8E8E"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "Trạm",
+        "stacking": "normal",
+        "orientation": "auto",
+        "showValue": "auto",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Thời gian phản ứng TB",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 4,
+        "x": 12,
+        "y": 47
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT avg(EXTRACT(EPOCH FROM (acked_at - opened_at))) AS \"Phản ứng TB\"\nFROM fact_alert WHERE run_id = 'LIVE' AND acked_at IS NOT NULL"
+        }
+      ],
+      "description": "Trung bình (acked_at − opened_at), tính theo giờ thật, trên các cảnh báo đã được tiếp nhận.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "—",
+          "unit": "s",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 300
+              },
+              {
+                "color": "#E02F44",
+                "value": 900
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Chưa ai nhận",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 4,
+        "x": 16,
+        "y": 47
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Chưa ai nhận\" FROM fact_alert WHERE run_id = 'LIVE' AND status = 'OPEN'"
+        }
+      ],
+      "description": "Cảnh báo đang OPEN, chưa có người tiếp nhận.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "—",
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              },
+              {
+                "color": "#E02F44",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Bị bỏ lỡ",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 4,
+        "x": 20,
+        "y": 47
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Bị bỏ lỡ\" FROM fact_alert WHERE run_id = 'LIVE' AND status = 'RESOLVED' AND acked_at IS NULL"
+        }
+      ],
+      "description": "Cảnh báo đã tự đóng (RESOLVED) mà không ai tiếp nhận.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "—",
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    }
+  ]
+}
