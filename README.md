@@ -20,7 +20,7 @@ scenario_data.csv → Producer → raw → cleaned → agg_hourly
 | `grafana`     | Grafana            | 3000      | 4-screen dashboard                     |
 | `api`         | FastAPI + Uvicorn  | 8000      | Alert acknowledgement (`/ack`)         |
 
-Producer and detector are added in later tasks (`feature/data-pipeline`, `feature/alert-detection`).
+Producer/ELT: see producer/README.md. Detector: see "Alert detector" below.
 
 ## Project structure
 
@@ -142,6 +142,29 @@ docker compose exec timescaledb psql -U energy -d energy \
 If you edit the dashboard in the Grafana UI, export it (Share → Export → *Save to file*) back to
 `grafana/dashboards/dashboard.json` and keep `uid = energy-alert` (the API redirect uses it).
 
+## Alert detector
+
+Python 3.10 or newer is required. CSV replay uses only the Python standard library:
+
+```bash
+python detector/detector.py --source csv --method A
+python detector/detector.py --source csv --method B
+python -m unittest discover -s detector -v
+```
+
+The commands write `alerts_A.csv` and `alerts_B.csv` in the current directory. Override the input, parameters, or output with `--input`, `--params`, and `--output`. Each output row is the latest snapshot of one alert, with `opened_ts`, `escalated_ts`, and `resolved_ts` in data time; a still-open alert has an empty `resolved_ts`. These files do not contain the answer key. A uses load thresholds; B adds stuck-sensor detection and time-to-breach (TTB).
+
+For database mode, install `pip install -r detector/requirements.txt`, start a compatible TimescaleDB with this repository's schema and populated `param_threshold` and `cleaned` tables, and set `DATABASE_URL` locally. Run:
+
+```bash
+python detector/detector.py --source db --method B --run-id LIVE
+python detector/detector.py --source db --method B --run-id EVAL_B --once
+```
+
+The detector polls every 10 seconds by default (`--poll-seconds`). `--once` drains current data and exits. Its database user must be able to create `detector_checkpoint` and read `cleaned` and `param_threshold` and write `fact_alert`. Checkpoints and alert changes commit together; restarting with the same run ID resumes per station and preserves ACK status. Use a different run ID for each method or independent replay. Only one detector may run with a given run ID. The producer/ELT pipeline must supply `cleaned` in timestamp order per station; late rows older than a checkpoint are not replayed.
+
+Both modes calculate the 1-hour rate only across consecutive 15-minute samples. A stuck sensor is detected at the fourth identical S_H sample; overload checks are skipped while stuck, and the sensor alert resolves when S_H changes. An overload alert resolves after two consecutive samples below the station's close threshold; RED stays RED until resolution, retaining `escalated_ts`. If a TTB jumps directly to the RED condition, an alert can open RED without a preceding YELLOW. These conventions are shared by both modes. The detector never uses `event_label` for detection.
+
 ## Common commands
 
 ```bash
@@ -172,6 +195,4 @@ docker compose down -v && docker compose up -d
 
 ## Git workflow
 
-- One branch per task, named as in the task tracker (e.g. `feature/warehouse-schema`, `feature/data-pipeline`, `feature/alert-detection`).
-- Open a PR into `main`; the assigned checker reviews before merge.
 - Never commit `.env`.

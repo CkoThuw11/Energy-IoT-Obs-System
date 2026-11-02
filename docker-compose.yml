@@ -45,8 +45,8 @@ services:
     container_name: energy-api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-energy}:${POSTGRES_PASSWORD:-energy}@timescaledb:5432/${POSTGRES_DB:-energy}
-      GRAFANA_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:3000}       # địa chỉ trình duyệt mở được
-      GRAFANA_DASHBOARD_PATH: /d/energy-alert/energy-alert          # /ack chuyển hướng về đây
+      GRAFANA_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:3000}
+      GRAFANA_DASHBOARD_PATH: /d/energy-alert/energy-alert
     ports:
       - "8000:8000"
     depends_on:
