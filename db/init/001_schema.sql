@@ -126,17 +126,23 @@ SELECT add_continuous_aggregate_policy('agg_hourly',
        if_not_exists     => TRUE);
 
 -- ---------------------------------------------------------------------
--- 5. FACT_ALERT – cảnh báo (detector ghi, FastAPI cập nhật ACK)
---    Vòng đời: OPEN → ACK → RESOLVED. RESOLVED mà acked_at rỗng = bị bỏ lỡ
+-- 5. FACT_ALERT – cảnh báo (detector ghi; Streamlit ghi các bước của người trực)
+--    Vòng đời: OPEN → ACK → ACTION_TAKEN → RESOLVED, khớp quy trình 3 bước
+--    ① Nhận (ACK + verdict REAL, hoặc Báo giả) → ② Chuyển tải (ACTION_TAKEN) → ③ Theo dõi.
+--    Detector mở / cập nhật / đóng theo dữ liệu; người trực chỉ ghi acked_*,
+--    verified_at, verdict, action_done_at, root_cause (detector không ghi đè).
+--    Báo giả: verdict = 'FALSE_ALARM', status = 'RESOLVED', resolved_ts = last_ts.
+--    RED + RESOLVED mà acked_at rỗng = bị bỏ lỡ
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS fact_alert (
     alert_id          BIGSERIAL PRIMARY KEY,
-    run_id            TEXT NOT NULL DEFAULT 'LIVE',        -- LIVE / EVAL_A / EVAL_B / DRILL
+    run_id            TEXT NOT NULL DEFAULT 'LIVE',        -- LIVE (vận hành / phát lại) / EVAL_A / EVAL_B
     station_id        TEXT NOT NULL REFERENCES dim_substation (station_id),
     alert_type        TEXT NOT NULL CHECK (alert_type IN ('OVERLOAD', 'SENSOR')),
     severity          TEXT NOT NULL CHECK (severity IN ('RED', 'YELLOW', 'SENSOR')),
     trigger_rule      TEXT CHECK (trigger_rule IN ('THRESHOLD', 'TTB', 'STUCK', 'MISSING')),
-    status            TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'ACK', 'RESOLVED')),
+    status            TEXT NOT NULL DEFAULT 'OPEN'
+                      CHECK (status IN ('OPEN', 'ACK', 'ACTION_TAKEN', 'RESOLVED')),
     -- thời gian dữ liệu
     opened_ts         TIMESTAMP NOT NULL,
     escalated_ts      TIMESTAMP,                           -- lúc lên Đỏ (= opened_ts nếu mở thẳng Đỏ) → lead time
@@ -146,24 +152,68 @@ CREATE TABLE IF NOT EXISTS fact_alert (
     opened_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     acked_at          TIMESTAMPTZ,
     acked_by          TEXT,
+    verified_at       TIMESTAMPTZ,                         -- ① Nhận (xác nhận quá tải thật) hoặc Báo giả
+    verdict           TEXT CHECK (verdict IN ('REAL', 'FALSE_ALARM')),
+    action_done_at    TIMESTAMPTZ,                         -- ② Chuyển tải: bấm "Xác nhận chuyển tải"
+    root_cause        TEXT,                                -- ③ Theo dõi (SENSOR: 'SENSOR_MAINTENANCE')
     resolved_at       TIMESTAMPTZ,
     -- mức độ
     load_pct          DOUBLE PRECISION,
     peak_load_pct     DOUBLE PRECISION,
-    ttb_min           DOUBLE PRECISION,                    -- NULL khi tải không tăng
+    ttb_min           DOUBLE PRECISION,                    -- NULL khi tải không tăng hoặc load_pct ≥ 100
     speed_pct_h       DOUBLE PRECISION,                    -- load_pct − load_pct 1 giờ trước
     below_close_count SMALLINT NOT NULL DEFAULT 0,         -- số lần liên tiếp < close_pct (hysteresis)
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ck_type_severity CHECK ((alert_type = 'SENSOR') = (severity = 'SENSOR')),
     CONSTRAINT ck_ack           CHECK (status <> 'ACK' OR (acked_at IS NOT NULL AND acked_by IS NOT NULL)),
+    CONSTRAINT ck_action        CHECK (status <> 'ACTION_TAKEN' OR action_done_at IS NOT NULL),
+    CONSTRAINT ck_verdict       CHECK (verdict IS NULL OR verified_at IS NOT NULL),
     CONSTRAINT ck_resolved      CHECK ((status = 'RESOLVED') = (resolved_ts IS NOT NULL)),
     CONSTRAINT ck_escalated     CHECK (escalated_ts IS NULL OR severity = 'RED'),
     CONSTRAINT ck_time_order    CHECK (last_ts >= opened_ts AND (resolved_ts IS NULL OR resolved_ts >= opened_ts))
 );
 -- Chống trùng: mỗi (run, trạm, loại) chỉ 1 cảnh báo đang mở
 CREATE UNIQUE INDEX IF NOT EXISTS ux_alert_one_open
-    ON fact_alert (run_id, station_id, alert_type) WHERE status IN ('OPEN', 'ACK');
+    ON fact_alert (run_id, station_id, alert_type) WHERE status IN ('OPEN', 'ACK', 'ACTION_TAKEN');
 CREATE INDEX IF NOT EXISTS ix_alert_run_station_ts ON fact_alert (run_id, station_id, opened_ts);
+
+-- Biện pháp giảm tải ở bước ② – hiện chỉ dùng TRANSFER (chuyển tải sang trạm lân cận).
+-- Dữ liệu là lịch sử nên lưới không đổi thật: tác dụng được MÔ PHỎNG trong v_load_sim
+-- (trạm nguồn − amount, trạm nhận + amount) cho các mốc ts ∈ (effective_from_ts, effective_to_ts].
+-- effective_to_ts do detector đặt khi TẢI ĐO của trạm nguồn < close_pct hai lần liên tiếp (trả tải).
+CREATE TABLE IF NOT EXISTS fact_alert_action (
+    action_id         BIGSERIAL PRIMARY KEY,
+    alert_id          BIGINT NOT NULL REFERENCES fact_alert (alert_id),
+    action_type       TEXT NOT NULL CHECK (action_type IN ('TRANSFER', 'DEMAND_RESPONSE', 'BACKUP', 'LOAD_SHED')),
+    amount            DOUBLE PRECISION NOT NULL CHECK (amount > 0),       -- lượng chuyển, cùng đơn vị S_H
+    target_station    TEXT REFERENCES dim_substation (station_id),        -- chỉ dùng cho TRANSFER
+    effective_from_ts TIMESTAMP,                                          -- mốc dữ liệu lúc xác nhận
+    effective_to_ts   TIMESTAMP,                                          -- mốc dữ liệu lúc trả tải (NULL = còn hiệu lực)
+    done_by           TEXT NOT NULL,
+    done_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_target_transfer CHECK ((action_type = 'TRANSFER') = (target_station IS NOT NULL)),
+    CONSTRAINT ck_transfer_from   CHECK (action_type <> 'TRANSFER' OR effective_from_ts IS NOT NULL),
+    CONSTRAINT ck_transfer_window CHECK (effective_to_ts IS NULL OR effective_to_ts > effective_from_ts)
+);
+CREATE INDEX IF NOT EXISTS ix_alert_action_alert ON fact_alert_action (alert_id);
+
+-- Điều khiển phát lại: detector bật paused khi một cảnh báo chuyển sang Đỏ (chỉ LIVE);
+-- producer đọc paused trước mỗi mốc ts; Streamlit tắt paused khi mọi Đỏ đã xử lý (không hiện trên UI)
+CREATE TABLE IF NOT EXISTS replay_control (
+    run_id       TEXT PRIMARY KEY,
+    paused       BOOLEAN NOT NULL DEFAULT FALSE,
+    paused_at_ts TIMESTAMP,                                -- mốc dữ liệu lúc dừng
+    reason       TEXT,                                     -- alert_id gây dừng
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Trạng thái detector theo run (lịch sử 4 bản ghi, cảnh báo đang theo dõi); detector ghi
+-- cùng transaction với fact_alert để khởi động lại không mất / không trùng
+CREATE TABLE IF NOT EXISTS detector_checkpoint (
+    run_id TEXT PRIMARY KEY,
+    method TEXT NOT NULL,
+    state  JSONB NOT NULL
+);
 
 -- ---------------------------------------------------------------------
 -- 6. EVAL.EVENT_LABEL – đáp án, cất ở schema riêng; detector không đọc
@@ -187,30 +237,76 @@ CREATE TABLE IF NOT EXISTS eval.event_label (
 -- ---------------------------------------------------------------------
 -- 7. VIEW cho dashboard
 -- ---------------------------------------------------------------------
--- Màn hình 1: số liệu mới nhất của mỗi trạm
-CREATE OR REPLACE VIEW v_station_latest AS
-SELECT DISTINCT ON (c.station_id)
-       c.station_id, s.station_name, c.ts, c.s_h, c.load_pct, c.ot, c.quality_flag,
-       p.rated_load,
-       CASE WHEN c.load_pct >= p.red_pct    THEN 'RED'
-            WHEN c.load_pct >= p.yellow_pct THEN 'YELLOW'
-            ELSE 'NORMAL' END AS load_level
+-- Tải sau xử lý (MÔ PHỎNG): s_h đo − chuyển đi + nhận về, theo từng run_id.
+-- cleaned giữ nguyên số đo thật; detector LIVE xét quá tải trên load_pct_sim.
+CREATE OR REPLACE VIEW v_load_sim AS
+SELECT r.run_id, c.ts, c.station_id, c.s_h, c.load_pct, c.ot, c.quality_flag,
+       COALESCE(t.out_amt, 0)                                   AS transfer_out,
+       COALESCE(t.in_amt, 0)                                    AS transfer_in,
+       c.s_h - COALESCE(t.out_amt, 0) + COALESCE(t.in_amt, 0)   AS s_h_sim,
+       (c.s_h - COALESCE(t.out_amt, 0) + COALESCE(t.in_amt, 0)) / p.rated_load * 100 AS load_pct_sim
 FROM cleaned c
-JOIN dim_substation  s USING (station_id)
+CROSS JOIN (VALUES ('LIVE'), ('EVAL_A'), ('EVAL_B')) AS r (run_id)
 JOIN param_threshold p USING (station_id)
-ORDER BY c.station_id, c.ts DESC;
+LEFT JOIN LATERAL (
+    SELECT sum(x.amount) FILTER (WHERE a.station_id = c.station_id)     AS out_amt,
+           sum(x.amount) FILTER (WHERE x.target_station = c.station_id) AS in_amt
+    FROM fact_alert_action x
+    JOIN fact_alert a USING (alert_id)
+    WHERE a.run_id = r.run_id AND x.action_type = 'TRANSFER'
+      AND (a.station_id = c.station_id OR x.target_station = c.station_id)
+      AND c.ts > x.effective_from_ts
+      AND (x.effective_to_ts IS NULL OR c.ts <= x.effective_to_ts)
+) t ON TRUE;
 
--- Màn hình 2: hàng đợi cảnh báo, xếp Đỏ → Vàng → SENSOR, rồi TTB ngắn, rồi load_pct cao
+-- Số liệu mới nhất của mỗi trạm, theo từng run_id (dashboard lọc WHERE run_id = 'LIVE').
+-- s_h / load_pct = số ĐO; s_h_sim / load_pct_sim = sau chuyển tải (mô phỏng, = số đo nếu không chuyển).
+-- load_level = mức của trạm theo CẢNH BÁO ĐANG MỞ của run đó: RED > YELLOW > SENSOR > NORMAL.
+-- speed_pct_h = load_pct − load_pct 1 giờ (4 bản ghi) trước, trên TẢI ĐO (như detector: chuyển tải
+-- là khoảng bù cố định, không phải phụ tải tăng).
+CREATE OR REPLACE VIEW v_station_latest AS
+WITH latest AS (
+    SELECT station_id, max(ts) AS ts FROM cleaned GROUP BY station_id
+)
+SELECT v.run_id, v.station_id, s.station_name, v.ts, v.s_h, v.load_pct, v.ot, v.quality_flag,
+       v.s_h_sim, v.load_pct_sim, v.transfer_out, v.transfer_in,
+       p.rated_load,
+       v.load_pct - h.load_pct AS speed_pct_h,
+       CASE COALESCE(min(CASE a.severity WHEN 'RED' THEN 1 WHEN 'YELLOW' THEN 2 WHEN 'SENSOR' THEN 3 END), 4)
+            WHEN 1 THEN 'RED' WHEN 2 THEN 'YELLOW' WHEN 3 THEN 'SENSOR' ELSE 'NORMAL' END AS load_level,
+       min(a.ttb_min) FILTER (WHERE a.alert_type = 'OVERLOAD') AS ttb_min
+FROM latest l
+JOIN v_load_sim v ON v.station_id = l.station_id AND v.ts = l.ts
+JOIN dim_substation  s ON s.station_id = l.station_id
+JOIN param_threshold p ON p.station_id = l.station_id
+LEFT JOIN v_load_sim h ON h.run_id = v.run_id AND h.station_id = v.station_id AND h.ts = v.ts - INTERVAL '1 hour'
+LEFT JOIN fact_alert a ON a.run_id = v.run_id AND a.station_id = v.station_id
+                      AND a.status IN ('OPEN', 'ACK', 'ACTION_TAKEN')
+GROUP BY v.run_id, v.station_id, s.station_name, v.ts, v.s_h, v.load_pct, v.ot, v.quality_flag,
+         v.s_h_sim, v.load_pct_sim, v.transfer_out, v.transfer_in, p.rated_load, h.load_pct;
+
+-- Hàng đợi cảnh báo. Xếp: đang mở trước → mức (Đỏ, Vàng, SENSOR) → TTB theo khung 10 phút
+-- → trạm có khách hàng ưu tiên → load_pct cao.
+-- is_escalated: Đỏ còn OPEN quá 3 phút giờ thật, Vàng còn OPEN quá 15 phút; SENSOR không leo thang.
+-- is_missed: Đỏ đã đóng mà chưa ai nhận.
 CREATE OR REPLACE VIEW v_alert_queue AS
 SELECT a.*,
        s.station_name,
        CASE a.severity WHEN 'RED' THEN 1 WHEN 'YELLOW' THEN 2 ELSE 3 END       AS severity_rank,
-       (a.status = 'RESOLVED' AND a.acked_at IS NULL)                        AS is_missed,
+       EXISTS (SELECT 1 FROM dim_customer_group g
+                WHERE g.station_id = a.station_id AND g.is_priority)          AS has_priority_customer,
+       (a.status = 'OPEN' AND (
+            (a.severity = 'RED'    AND now() - a.opened_at > INTERVAL '3 minutes') OR
+            (a.severity = 'YELLOW' AND now() - a.opened_at > INTERVAL '15 minutes'))) AS is_escalated,
+       (a.severity = 'RED' AND a.status = 'RESOLVED' AND a.acked_at IS NULL)   AS is_missed,
        EXTRACT(EPOCH FROM (a.acked_at - a.opened_at))                        AS response_sec
 FROM fact_alert a
 JOIN dim_substation s USING (station_id)
 ORDER BY (a.status = 'RESOLVED'),                                            -- đang mở lên trước
-         severity_rank, a.ttb_min ASC NULLS LAST, a.load_pct DESC NULLS LAST;
+         severity_rank,
+         floor(coalesce(a.ttb_min, 9999) / 10),                              -- TTB chênh ≤ 10 phút coi như bằng
+         has_priority_customer DESC,
+         a.load_pct DESC NULLS LAST;
 
 -- ---------------------------------------------------------------------
 -- 8. DỮ LIỆU DIMENSION (SIMULATED – nhóm tự đặt)

@@ -20,35 +20,17 @@ services:
       retries: 10
     restart: unless-stopped
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: energy-grafana
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-      POSTGRES_USER: ${POSTGRES_USER:-energy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energy}
-      POSTGRES_DB: ${POSTGRES_DB:-energy}
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-    restart: unless-stopped
-
-  api:
-    build: ./api
-    container_name: energy-api
+  dashboard:
+    build: ./dashboard
+    container_name: energy-dashboard
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-energy}:${POSTGRES_PASSWORD:-energy}@timescaledb:5432/${POSTGRES_DB:-energy}
-      GRAFANA_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:3000}
-      GRAFANA_DASHBOARD_PATH: /d/energy-alert/energy-alert
+      EVAL_RESULT_PATH: /app/eval/eval_summary.csv   # kết quả đánh giá A/B (notebooks/evaluate.ipynb)
+      DISPLAY_TZ: Asia/Ho_Chi_Minh
     ports:
-      - "8000:8000"
+      - "8501:8501"
+    volumes:
+      - ./notebooks/output:/app/eval:ro
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -56,4 +38,3 @@ services:
 
 volumes:
   timescale_data:
-  grafana_data:

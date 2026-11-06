@@ -1,1 +1,33 @@
+# Bí mật / cấu hình máy cá nhân
+.env
+.env.local
+
+# Kết quả sinh ra khi chạy detector / script demo
 alerts_*.csv
+detector_*.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Streamlit (giữ dashboard/.streamlit/config.toml, bỏ secrets)
+.streamlit/secrets.toml
+
+# IDE / hệ điều hành / công cụ
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+.claude/

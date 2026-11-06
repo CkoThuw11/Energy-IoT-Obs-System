@@ -40,6 +40,39 @@ class DetectionTests(unittest.TestCase):
             self.assertEqual(detector.process("X", START + timedelta(minutes=15 * index), 95, 95)[-1]["alert_type"], "OVERLOAD")
         self.assertNotIn("SENSOR", detector.state["X"]["active"])
 
+    def test_ttb_null_when_overloaded_or_not_rising(self):
+        actions = self.feed(Detector(PARAMS, "B"), [90, 92, 94, 96, 101, 101, 101, 101, 95])
+        self.assertIsNone(actions[0]["ttb_min"])          # chưa đủ 4 bản ghi
+        self.assertIsNone(actions[4]["ttb_min"])          # load ≥ 100
+        self.assertIsNone(actions[-1]["ttb_min"])         # tốc độ ≤ 0
+
+    def test_became_red_only_on_transition(self):
+        actions = self.feed(Detector(PARAMS, "A"), [80, 91, 101, 102, 92])
+        self.assertEqual([a["became_red"] for a in actions], [False, True, False, False])
+        opened_red = self.feed(Detector(PARAMS, "A"), [105, 106])
+        self.assertEqual([a["became_red"] for a in opened_red], [True, False])
+
+    def test_muted_alert_silent_until_closed(self):
+        detector = Detector(PARAMS, "A")
+        self.feed(detector, [91])
+        detector.mute("X", "OVERLOAD")
+        silent = [detector.process("X", START + timedelta(minutes=15 * i), v, v)
+                  for i, v in enumerate([95, 101, 84, 83], start=1)]
+        self.assertEqual(silent, [[], [], [], []])
+        self.assertNotIn("OVERLOAD", detector.state["X"]["active"])
+        reopened = detector.process("X", START + timedelta(minutes=75), 92, 92)
+        self.assertEqual(reopened[0]["opened_ts"], "2018-01-01 01:15:00")
+
+    def test_transfer_offset_is_not_a_trend(self):
+        # tải đo tăng đều 2%/bản ghi; từ bản ghi thứ 5 chuyển tải làm tải vận hành thấp hơn 30 điểm
+        detector, actions = Detector(PARAMS, "B"), []
+        for index, measured in enumerate([91, 93, 95, 97, 99, 101, 103]):
+            shown = measured - 30 if index >= 4 else measured
+            actions += detector.process("X", START + timedelta(minutes=15 * index), measured, shown, measured)
+        overload = [a for a in actions if a["alert_type"] == "OVERLOAD"]
+        self.assertEqual([a["speed_pct_h"] for a in overload], [None, None, None, None, 8, 8])
+        self.assertEqual(overload[-1]["status"], "RESOLVED")   # đóng vì tải sau chuyển < 85% hai lần
+
     def test_duplicate_rejected_and_restart_state(self):
         detector = Detector(PARAMS, "A")
         self.feed(detector, [91, 84])

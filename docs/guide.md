@@ -2,22 +2,19 @@
 
 ## 1. Yêu cầu
 - Docker và Docker Compose v2
-- Các cổng còn trống trên máy: `5433` (DB), `3000` (Grafana), `8000` (API)
+- Các cổng còn trống trên máy: `5433` (DB), `8501` (dashboard Streamlit)
 
 ## 2. Khởi động
 ```bash
 git pull
 docker compose up -d --build
-docker compose ps        # cả 3 service ở trạng thái running, DB ở trạng thái healthy
+docker compose ps        # dashboard ở trạng thái running, DB ở trạng thái healthy
 ```
 
 ## 3. Kiểm tra nhanh
 ```bash
-curl -s localhost:8000/health
-# Kết quả đúng: {"status":"ok"}
-
-curl -s -u admin:admin localhost:3000/api/datasources/uid/timescaledb/health
-# Kết quả đúng: "status":"OK"
+curl -s localhost:8501/_stcore/health
+# Kết quả đúng: ok
 ```
 
 ## 4. Thông tin truy cập
@@ -25,8 +22,7 @@ curl -s -u admin:admin localhost:3000/api/datasources/uid/timescaledb/health
 | Thành phần | Địa chỉ | Tài khoản |
 |---|---|---|
 | TimescaleDB | `localhost:5433`, database `energy` | energy / energy |
-| Grafana | http://localhost:3000 | admin / admin |
-| API | http://localhost:8000/docs | không cần |
+| Dashboard (Streamlit) | http://localhost:8501 | không cần; chọn người trực ở sidebar |
 
 Truy cập DB bằng psql:
 ```bash
@@ -46,7 +42,7 @@ Chi tiết xem `docs/erd.md` và `docs/architecture.md`.
 ## 6. Sửa DDL hoặc dựng lại DB từ đầu
 Các script trong `db/init/` **chỉ chạy khi volume DB còn trống**. Sau khi sửa hoặc thêm file SQL:
 ```bash
-docker compose down -v      # xóa toàn bộ dữ liệu DB và Grafana
+docker compose down -v      # xóa toàn bộ dữ liệu DB
 docker compose up -d --build
 docker compose logs timescaledb | grep -E "initdb.d|ERROR"
 ```
@@ -67,8 +63,8 @@ Thứ tự cột trong CSV phải khớp đúng với bảng. Xem lại bằng l
 |---|---|
 | `port is already allocated` | Tắt dịch vụ đang chiếm cổng, hoặc đổi cổng trong `docker-compose.yml` |
 | Đã sửa SQL nhưng DB không đổi | Chạy `docker compose down -v` rồi khởi động lại |
-| Grafana không thấy datasource | Xem log: `docker compose logs grafana \| grep -i provision` |
-| API không lên | Xem log: `docker compose logs api` |
+| Dashboard báo lỗi kết nối | Xem log: `docker compose logs dashboard`; kiểm tra `DATABASE_URL` |
+| Producer đứng yên, log "TẠM DỪNG" | Có cảnh báo Đỏ chưa xử lý: xử lý trên Trang 2 hoặc bấm "Chạy tiếp" ở sidebar |
 
 ## 9. Dừng hệ thống
 ```bash

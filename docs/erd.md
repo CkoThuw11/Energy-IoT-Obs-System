@@ -7,7 +7,7 @@ Kho chia thành 4 lớp. Mọi bảng nối với `dim_substation` qua khóa `st
 |---|---|---|
 | Tham chiếu | `dim_substation`, `dim_customer_group`, `param_threshold` | Mô tả trạm, khách hàng, định mức và ngưỡng |
 | Cảm biến | `raw` → `cleaned` → `agg_hourly`, `etl_watermark` | Số liệu đo 15 phút, đã làm sạch và tổng hợp theo giờ |
-| Cảnh báo | `fact_alert` | Mỗi dòng là 1 cảnh báo và vòng đời của nó |
+| Cảnh báo | `fact_alert`, `fact_alert_action`, `replay_control` | Cảnh báo và vòng đời; biện pháp người trực chọn; trạng thái dừng phát lại |
 | Đánh giá | `eval.event_label` | Đáp án sự cố, schema riêng, detector không đọc |
 
 Phần 6 gộp các lớp trên thành star schema.
@@ -150,7 +150,7 @@ erDiagram
         text alert_type "OVERLOAD / SENSOR"
         text severity "RED / YELLOW / SENSOR"
         text trigger_rule "THRESHOLD / TTB / STUCK / MISSING"
-        text status "OPEN / ACK / RESOLVED"
+        text status "OPEN / ACK / ACTION_TAKEN / RESOLVED"
         timestamp opened_ts
         timestamp escalated_ts
         timestamp last_ts
@@ -158,6 +158,10 @@ erDiagram
         timestamptz opened_at
         timestamptz acked_at
         text acked_by
+        timestamptz verified_at
+        text verdict "REAL / FALSE_ALARM"
+        timestamptz action_done_at
+        text root_cause
         timestamptz resolved_at
         float load_pct
         float peak_load_pct
@@ -166,9 +170,30 @@ erDiagram
         smallint below_close_count
         timestamptz updated_at
     }
+    fact_alert_action {
+        bigint action_id PK
+        bigint alert_id FK
+        text action_type "TRANSFER (đang dùng)"
+        float amount "> 0"
+        text target_station FK "chỉ TRANSFER"
+        timestamp effective_from_ts "mốc dữ liệu lúc chuyển"
+        timestamp effective_to_ts "mốc trả tải, NULL = hiệu lực"
+        text done_by
+        timestamptz done_at
+    }
+    replay_control {
+        text run_id PK
+        boolean paused
+        timestamp paused_at_ts
+        text reason "alert_id gây dừng"
+        timestamptz updated_at
+    }
 
     dim_substation ||--o{ fact_alert : "cảnh báo"
     dim_substation ||--|| param_threshold : "ngưỡng dùng để phát hiện"
+    fact_alert ||--o{ fact_alert_action : "biện pháp giảm tải"
+    dim_substation |o--o{ fact_alert_action : "trạm nhận chuyển tải"
+    fact_alert |o..o{ replay_control : "reason (logic, không FK)"
 ```
 
 | Thuộc tính | Giá trị |
@@ -177,11 +202,22 @@ erDiagram
 | Grain | 1 cảnh báo |
 | Measure | `load_pct`, `peak_load_pct`, `ttb_min`, `speed_pct_h` |
 | Mốc dữ liệu | `opened_ts` → `escalated_ts` (lên Đỏ) → `resolved_ts` |
-| Mốc giờ thật | `opened_at` → `acked_at` → `resolved_at` |
-| Người ghi | Detector (mở, cập nhật, đóng); FastAPI (ACK) |
+| Mốc giờ thật | `opened_at` → `acked_at` → `verified_at` → `action_done_at` → `resolved_at` |
+| Người ghi | Detector (mở, cập nhật, đóng); Streamlit (ACK, xác minh, hành động, nguyên nhân, báo giả) |
 
-- **Vòng đời:** OPEN → ACK → RESOLVED. Cảnh báo đóng khi `below_close_count` đạt `close_records` (2). RESOLVED mà chưa ACK được tính là bị bỏ lỡ.
-- **`run_id`:** LIVE (dashboard), EVAL_A, EVAL_B (đánh giá), DRILL (diễn tập). Không có bảng `eval_alert` riêng.
+- **Vòng đời:** OPEN → ACK → ACTION_TAKEN → RESOLVED, khớp quy trình 3 bước Xác nhận → Chuyển tải → Theo dõi.
+  - ① Xác nhận: `status = ACK`, `acked_by`, `acked_at`, `verdict = REAL`, `verified_at`; hoặc báo giả (xem dưới).
+  - ② Chuyển tải: mỗi lần chuyển là 1 dòng `fact_alert_action` (TRANSFER, `amount`, `target_station`, `effective_from_ts`); lần đầu đặt `status = ACTION_TAKEN`, `action_done_at`.
+  - ③ Theo dõi: `root_cause`. Detector đóng cảnh báo khi tải **sau chuyển tải** (`v_load_sim`) < 85% hai lần liên tiếp, và đặt `effective_to_ts` (trả tải) khi tải **đo** của trạm nguồn < 85% hai lần liên tiếp.
+- **Báo giả:** `verdict = FALSE_ALARM`, `status = RESOLVED`, `resolved_ts = last_ts`. Chỉ dùng cho KPI vận hành; Recall/Precision vẫn chấm bằng `event_label`.
+- **Bị bỏ lỡ:** cảnh báo Đỏ RESOLVED mà `acked_at` rỗng.
+- Detector vẫn cập nhật số đo (`load_pct`, `ttb_min`, `peak_load_pct`, `last_ts`) của cảnh báo ACK / ACTION_TAKEN và đóng như bình thường, nhưng không ghi đè cột người trực nhập.
+- **`run_id`:** LIVE (vận hành / phát lại, dashboard), EVAL_A, EVAL_B (đánh giá phương pháp). Không có bảng `eval_alert` riêng.
+
+| Bảng | Grain | Người ghi | Ghi chú |
+|---|---|---|---|
+| fact_alert_action | 1 lần chuyển tải của 1 cảnh báo | Streamlit (detector đặt `effective_to_ts`) | Hiện chỉ dùng TRANSFER; `amount > 0`; `target_station` bắt buộc với TRANSFER; hiệu lực cho các mốc `ts ∈ (effective_from_ts, effective_to_ts]`; `done_at = now()` |
+| replay_control | 1 run (LIVE) | Detector bật, Streamlit tắt | Detector UPSERT `paused = true`, `paused_at_ts = ts`, `reason = alert_id` khi một cảnh báo chuyển sang Đỏ (run LIVE). Không hiển thị trên dashboard. Producer đọc `paused` trước mỗi mốc `ts`. EVAL_A/EVAL_B không ghi |
 
 ---
 
@@ -283,18 +319,20 @@ erDiagram
 
 | Bảng | Vai trò | Grain | Dùng cho màn hình |
 |---|---|---|---|
-| cleaned | Fact số liệu đo (transaction) | 1 trạm × 15 phút | 1 Tổng quan, 3 Chi tiết Red Alert |
-| agg_hourly | Fact tổng hợp (periodic snapshot) | 1 trạm × 1 giờ | 1 Xu hướng 24 giờ, 4 KPI |
-| fact_alert | Fact cảnh báo (accumulating snapshot) | 1 cảnh báo | 2 Danh sách cảnh báo, 4 KPI |
+| cleaned | Fact số liệu đo (transaction) | 1 trạm × 15 phút | 1 Điều hành, 2 Chi tiết trạm |
+| agg_hourly | Fact tổng hợp (periodic snapshot) | 1 trạm × 1 giờ | Tra cứu theo giờ |
+| fact_alert | Fact cảnh báo (accumulating snapshot) | 1 cảnh báo | Điều hành, Chi tiết trạm |
+| fact_alert_action | Fact chuyển tải (transaction) | 1 lần chuyển | Chi tiết trạm, Điều hành |
 | dim_substation | Dimension trung tâm | 1 trạm | Tất cả |
-| param_threshold | Mở rộng của trạm | 1 trạm | 3 Lượng cần giảm, công suất dư Trạm 3 |
-| dim_customer_group | Mở rộng của trạm | 1 nhóm khách hàng | 3 Nhóm khách hàng bị ảnh hưởng |
+| param_threshold | Mở rộng của trạm | 1 trạm | 2 Lượng cần giảm, trạm lân cận nhận tối đa |
+| dim_customer_group | Mở rộng của trạm | 1 nhóm khách hàng | 1 Xếp hạng (khách hàng ưu tiên), 2 Khách hàng |
 
 **View phục vụ dashboard**
 | View | Nội dung |
 |---|---|
-| v_station_latest | Bản ghi mới nhất mỗi trạm, kèm `rated_load` và mức NORMAL / YELLOW / RED |
-| v_alert_queue | Cảnh báo đang mở lên trước; xếp Đỏ → Vàng → SENSOR, rồi TTB ngắn, rồi `load_pct` cao; có `is_missed`, `response_sec` |
+| v_load_sim | Mỗi run × trạm × `ts`: số đo `s_h`, `load_pct` và tải sau chuyển tải (mô phỏng) `s_h_sim`, `load_pct_sim`, `transfer_out`, `transfer_in` |
+| v_station_latest | Bản ghi mới nhất mỗi trạm × `run_id`: `ts`, `s_h`, `load_pct`, `s_h_sim`, `load_pct_sim`, `rated_load`, `ot`, `speed_pct_h` (trên tải mô phỏng); `load_level` theo **cảnh báo đang mở** của run đó (RED > YELLOW > SENSOR > NORMAL), không theo ngưỡng %; `ttb_min` của cảnh báo OVERLOAD đang mở |
+| v_alert_queue | Xếp: đang mở trước → `severity_rank` (RED 1, YELLOW 2, SENSOR 3) → `floor(coalesce(ttb_min, 9999) / 10)` → `has_priority_customer` → `load_pct` cao. Cờ `has_priority_customer`, `is_escalated` (Đỏ OPEN > 3 phút, Vàng OPEN > 15 phút), `is_missed` (Đỏ RESOLVED chưa ACK), `response_sec` |
 
 ---
 
@@ -309,9 +347,12 @@ erDiagram
 | `source_type` | Chỉ có trong `eval.event_label`. REAL = có sẵn trong dữ liệu gốc; SIMULATED = nhóm bơm vào |
 
 ## 8. Ràng buộc quan trọng
-- **Chống trùng:** `ux_alert_one_open (run_id, station_id, alert_type) WHERE status IN ('OPEN','ACK')`.
+- **Chống trùng:** `ux_alert_one_open (run_id, station_id, alert_type) WHERE status IN ('OPEN','ACK','ACTION_TAKEN')`.
 - **Loại khớp mức:** SENSOR ↔ severity SENSOR; OVERLOAD ↔ RED / YELLOW.
 - **ACK hợp lệ:** status ACK bắt buộc có `acked_at` và `acked_by`.
+- **Đã xử lý hợp lệ:** status ACTION_TAKEN bắt buộc có `action_done_at`.
+- **Xác minh hợp lệ:** có `verdict` (REAL / FALSE_ALARM) thì bắt buộc có `verified_at`.
+- **Chuyển tải:** `amount > 0`; TRANSFER ⇔ có `target_station`; TRANSFER bắt buộc có `effective_from_ts`; `effective_to_ts > effective_from_ts`.
 - **Đóng hợp lệ:** status RESOLVED ⇔ có `resolved_ts`.
 - **Lên Đỏ:** có `escalated_ts` thì severity phải là RED.
 - **Ngưỡng hợp lệ:** `close_pct < yellow_pct < red_pct`; `red_ttb_min < yellow_ttb_min`.

@@ -47,12 +47,15 @@ python producer/producer.py --speed 0                               # nạp cả
 | `--speed` | `1`, `10`, `60`, `x60`... ; `0` = hết tốc độ. 15 phút dữ liệu = 900 / speed giây |
 | `--start` | Bắt đầu phát từ `YYYY-MM-DD` hoặc `"YYYY-MM-DD HH:MM"` (mặc định: đầu file) |
 | `--days N` / `--end` | Dừng sau N ngày / trước mốc `--end` |
+| `--event` | Phát lại một sự cố của `event_label.csv` (vd `EV029`): từ `t_start − 2 giờ` đến `t_end + 2 giờ` |
+| (dừng khi Đỏ) | Trước mỗi mốc `ts` đọc `replay_control.paused` của run LIVE; đang dừng thì chờ, kiểm tra mỗi 1 giây. Tốc độ > ×60 (hoặc 0) chỉ in cảnh báo |
 | `--dry-run` | Chỉ in kế hoạch phát, không ghi DB |
 | `--dsn` | Chuỗi kết nối (mặc định `postgresql://energy:energy@localhost:5433/energy`, hoặc biến `DATABASE_URL` / `POSTGRES_*`) |
 
 - Dừng bằng `Ctrl+C`: mốc đang ghi dở bị hủy, các mốc đã xong vẫn còn. Chạy lại là phát tiếp, **không trùng** nhờ `ON CONFLICT (station_id, ts) DO NOTHING`.
 - Mỗi mốc `ts` ghi đủ 4 trạm trong một transaction, nên ELT không bao giờ thấy mốc ghi dở.
-- Log: `[ts] đã phát X/Y mốc | gửi N dòng, ghi mới M, bỏ qua trùng K`.
+- Log: `[ts] đã phát X/Y mốc | gửi N dòng, ghi mới M, bỏ qua trùng K`; khi dừng: `TẠM DỪNG (...)` và `CHẠY TIẾP sau N giây dừng`.
+- Không bao giờ dừng giữa một mốc `ts`; thời gian dừng được cộng vào lịch phát nên sau khi chạy tiếp không phát dồn.
 
 ## 3. Kiểm tra nhanh
 
@@ -76,7 +79,7 @@ docker compose exec -T timescaledb psql -U energy -d energy -v day=2017-11-01 < 
 ## 4. Lưu ý
 
 - Dữ liệu có `ts` năm 2017–2018, nên mọi tính toán theo **thời gian của dữ liệu**, không theo giờ máy. Policy làm mới của `agg_hourly` đã đặt `start_offset => NULL` trong `001_schema.sql`, và `materialized_only = false` nên giờ đang phát vẫn hiện ngay.
-- Grafana đặt múi giờ **UTC**, nếu không giờ hiển thị lệch +7.
+- Dashboard hiển thị giờ dữ liệu nguyên trạng (không đổi múi giờ); giờ thật hiển thị theo `DISPLAY_TZ` (mặc định Asia/Ho_Chi_Minh).
 - `quality_flag` trong `cleaned` để mặc định `'OK'`; detector tự kiểm tra đứng yên / mất số liệu (Task Phát hiện).
 - Phát lại từ `--start` sớm hơn mốc đã xử lý chỉ bổ sung được dòng **chưa có trong raw**; dòng mới có `ts` ≤ mốc của trạm đó sẽ không được ELT xử lý. Muốn nạp lại từ đầu: `docker compose down -v`.
 - Dừng job: `SELECT alter_job(<job_id>, scheduled => false);`

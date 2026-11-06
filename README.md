@@ -1,198 +1,147 @@
 # Energy-IoT-Obs-System
 
-Real-time BI and exception-alerting system for transformer overload.
-Pipeline: sensor replay → warehouse (raw → cleaned → agg_hourly) → detection → alert ranking → acknowledgement → dispatch decision on Red Alert.
+Hệ thống BI thời gian thực **cảnh báo quá tải trạm biến áp**, có cơ chế **ưu tiên và xếp hạng cảnh báo** trên dashboard điều hành.
 
-Data source: ETTm1 + ETTm2 (transformer load and oil temperature, 15-minute interval), mapped to 4 substations.
+Luồng: phát lại dữ liệu cảm biến → kho dữ liệu chuỗi thời gian → phát hiện → xếp hạng cảnh báo → xử lý sự cố Đỏ theo 3 bước (**Xác nhận → Chuyển tải → Theo dõi**) trên Streamlit.
 
-## Architecture
+Dữ liệu: ETTm1 + ETTm2 (tải và nhiệt độ dầu máy biến áp, 15 phút/bản ghi), gán cho 4 trạm.
 
-```
-scenario_data.csv → Producer → raw → cleaned → agg_hourly
-                                       │
-                                       ▼
-                                   Detector ──► fact_alert ──► Grafana ◄──► FastAPI (/ack)
-```
-
-| Service       | Tech               | Host port | Role                                   |
-|---------------|--------------------|-----------|----------------------------------------|
-| `timescaledb` | TimescaleDB (PG16) | 5433      | Time-series warehouse                  |
-| `grafana`     | Grafana            | 3000      | 4-screen dashboard                     |
-| `api`         | FastAPI + Uvicorn  | 8000      | Alert acknowledgement (`/ack`)         |
-
-Producer/ELT: see producer/README.md. Detector: see "Alert detector" below.
-
-## Project structure
+## 1. Kiến trúc
 
 ```
-Energy-IoT-Obs-System/
-├── docker-compose.yml          # TimescaleDB + Grafana + FastAPI
-├── .env.example                # Environment template (copy to .env)
-├── README.md
-│
-├── db/init/                    # Runs once, only when the DB volume is empty
-│   ├── 001_schema.sql          # Full warehouse schema + dimension data
-│   └── 002_load_data.sql       # Loads param_threshold.csv, event_label.csv
-│
-├── data/
-│   ├── ETTm1.csv, ETTm2.csv    # Original data
-│   ├── known_anomaly.csv       # Known faults in the original data (Task 1.1)
-│   ├── param_threshold.csv     # Rated load and alert thresholds per substation (Task 1.2)
-│   ├── scenario_data.csv       # 4 substations, 8-month test period, injected incidents (Task 1.3)
-│   └── event_label.csv         # Answer key for evaluation (Task 1.3)
-│
-├── grafana/
-│   ├── provisioning/           # Auto-registers datasource and dashboards
-│   └── dashboards/             # Exported dashboard JSON
-│
-├── api/app/main.py             # /health, /ack
-├── sql/                        # ELT procedures (raw → cleaned)
-├── producer/                   # Replay producer (writes to raw)
-├── detector/                   # Detection and alert lifecycle
-├── notebooks/                  # EDA, parameter and scenario notebooks
-└── docs/                       # architecture.md, erd.md, guide.md
+scenario_data.csv → Producer ──► raw → cleaned → agg_hourly
+   (--event EVxxx)     ▲                  │
+                       │ paused?          ▼  v_load_sim (tải đo ± chuyển tải mô phỏng)
+                 replay_control ◄──── Detector ──► fact_alert ◄──► Streamlit (3 trang)
+                       ▲   (dừng khi cảnh báo chuyển sang Đỏ)          │
+                       └──── xác nhận chuyển tải / báo giả ────────────┤
+                                                 fact_alert_action ◄───┘
 ```
 
-## Warehouse schema
+- **Producer** phát từng mốc `ts` (4 trạm). Trước mỗi mốc, producer đọc `replay_control.paused`; nếu đang dừng thì chờ.
+- **Detector** đọc dữ liệu theo thứ tự `ts`, mở/cập nhật/đóng cảnh báo. Khi một cảnh báo **chuyển sang Đỏ**, detector bật `paused = true`.
+- **Dashboard** ghi thao tác của người trực vào DB. Khi không còn cảnh báo Đỏ nào chưa xử lý, dashboard tắt `paused`.
+- **Tác dụng chuyển tải là mô phỏng.** Dữ liệu là lịch sử nên lưới thật không đổi. View `v_load_sim` tính trạm nguồn = S_H đo − X, trạm nhận = S_H đo + X. Bảng `cleaned` giữ nguyên số đo.
+- **Hai đồng hồ:** cột `*_ts` là giờ dữ liệu, dùng cho mọi logic phát hiện. Cột `*_at` là giờ thật (`now()`), chỉ dùng để đo thời gian phản ứng của con người.
+- **Run:** `LIVE` là phát lại qua DB, có dừng, hiện trên dashboard. `EVAL_A` / `EVAL_B` chấm phương pháp phát hiện trên CSV, không dừng.
 
-Time convention: `*_ts` = data time (used by all detection logic); `*_at` = wall-clock time (used only to measure human response).
+| Service | Công nghệ | Cổng | Vai trò |
+|---|---|---|---|
+| `timescaledb` | TimescaleDB (PG16) | 5433 | Kho dữ liệu chuỗi thời gian |
+| `dashboard` | Streamlit | 8501 | Dashboard điều hành và xử lý cảnh báo |
 
-| Table / view          | Content                                                             | Written by     |
-|-----------------------|---------------------------------------------------------------------|----------------|
-| `dim_substation`      | 4 substations, data origin, importance, neighbour for load transfer | `001_schema`   |
-| `dim_customer_group`  | Customer groups per substation (SIMULATED)                          | `001_schema`   |
-| `param_threshold`     | Rated load, Yellow/Red/close thresholds, stuck rule                 | `002_load_data`|
-| `raw` (hypertable)    | Sensor values as received; key `(station_id, ts)`                   | Producer       |
-| `cleaned` (hypertable)| raw + `s_h`, `load_pct`, `quality_flag`                             | ELT job        |
-| `etl_watermark`       | Last processed `ts` per substation                                  | ELT job        |
-| `agg_hourly`          | Hourly avg/max load and OT (continuous aggregate, auto-refresh)     | TimescaleDB    |
-| `fact_alert`          | Alerts: OPEN → ACK → RESOLVED; one open alert per (run, station, type) | Detector, API |
-| `eval.event_label`    | Answer key (38 events); not read by the detector                    | `002_load_data`|
-| `v_station_latest`    | Latest load per substation (dashboard screen 1)                     | view           |
-| `v_alert_queue`       | Alerts ordered Red → Yellow → Sensor, then TTB, then load           | view           |
+Chi tiết: `docs/architecture.md` (luồng, quy trình), `docs/erd.md` (schema), `producer/README.md` (producer, ELT).
 
-## Quick start
+## 2. Cài đặt
 
-Requirements: Docker and Docker Compose v2.
+Cần Docker Compose v2 và Python ≥ 3.10.
 
 ```bash
-cp .env.example .env        # then edit passwords if needed
-docker compose up -d
-docker compose ps           # all services should be "healthy" / "running"
+cp .env.example .env
+docker compose up -d --build                  # dựng lại dashboard mỗi khi sửa code
+docker compose exec -T timescaledb psql -U energy -d energy -v ON_ERROR_STOP=1 < sql/elt.sql   # chỉ khi DB mới
+pip install -r detector/requirements.txt      # psycopg 3 (hoặc: pyenv activate baseline-env)
 ```
 
-| What      | URL / address                 | Login                               |
-|-----------|-------------------------------|-------------------------------------|
-| Grafana   | http://localhost:3000         | `GRAFANA_*` from `.env`             |
-| FastAPI   | http://localhost:8000/health  | none                                |
-| Postgres  | `localhost:5433`              | `POSTGRES_*` from `.env`            |
+Kiểm tra: `curl -s localhost:8501/_stcore/health` trả về `ok`. Hai bảng `param_threshold` và `eval.event_label` phải có lần lượt 4 và 38 dòng.
 
-Inside the Compose network, services reach the database at `timescaledb:5432`.
+## 3. Chạy demo
 
-## Verify the setup
+Demo phát lại một **sự cố quá tải thật** của Trạm Y, không tiêm lỗi nhân tạo:
 
 ```bash
-# 1. Schema and data loaded
-docker compose exec timescaledb psql -U energy -d energy \
-  -c "\dt *.*" \
-  -c "SELECT count(*) FROM param_threshold" \
-  -c "SELECT count(*) FROM eval.event_label"
-# expect: 4 and 38
-
-# 2. Init errors (should print nothing)
-docker compose logs timescaledb | grep -i error
-
-# 3. API
-curl localhost:8000/health        # {"status":"ok"}
+scripts/replay_event.sh EV029 60      # mã sự cố, tốc độ (×60: 15 phút dữ liệu = 15 giây)
 ```
 
-Grafana: Connections → Data sources → TimescaleDB → **Save & test**.
-The provisioned dashboard already uses time zone **UTC**; for new dashboards set UTC, otherwise data times are shown shifted by +7 hours.
+| Sự cố | Quá tải (t_start → t_end) | Dữ liệu được phát (±2 giờ) | Thời lượng ở ×60 |
+|---|---|---|---|
+| **EV029** (khuyến nghị) | 04/02/2018 18:30 → 05/02 21:30 | 04/02 16:30 → 05/02 23:30 | ~31 phút |
+| EV030 | 06/02/2018 19:00 → 07/02 21:15 | 06/02 17:00 → 07/02 23:15 | ~30 phút |
+| EV037 | 08/05/2018 11:30 → 10/05 11:45 | 08/05 09:30 → 10/05 13:45 | ~52 phút |
 
-## Dashboard and alert acknowledgement
+Thời lượng trên chưa tính thời gian người trực xử lý. Script lần lượt: xóa dữ liệu phát lại cũ (`sql/reset_replay.sql`) → chạy detector nền (log `detector_EV029.log`) → chạy producer `--event`.
 
-`grafana/dashboards/dashboard.json` is provisioned automatically into folder **Energy IoT** → **Energy Alert**
-(http://localhost:3000/d/energy-alert/energy-alert). Auto-refresh 5 s, time zone UTC.
-Colours: **Red** = overload ≥ 100 % or TTB ≤ 30 min, **Yellow** = ≥ 90 % or TTB ≤ 60 min, **Gray** = sensor fault.
+Mở **http://localhost:8501** và xử lý (EV029):
 
-| Screen | Content | Source |
+| Giờ dữ liệu | Diễn biến | Người trực |
 |---|---|---|
-| 1. Overview | Current `load_pct` of 4 substations, status (Gray if an open SENSOR alert), `load_pct` over the last 24 h | `v_station_latest`, `cleaned`, `fact_alert` |
-| 2. Alert list | Red → Yellow → Sensor, then shortest TTB, then highest load; status column; **Tiếp nhận** link | `v_alert_queue` |
-| 3. Red Alert detail (variable *Trạm*) | `load_pct`, OT, speed, TTB, customer groups, spare capacity of TRAM_3 = 90 % × rated_load − S_H | `cleaned`, `v_station_latest`, `dim_customer_group` |
-| 4. KPI | Alerts per severity/substation, avg response time (`acked_at − opened_at`), unacknowledged, missed | `fact_alert` |
+| 04/02 ~18:30 | Trạm Y lên Đỏ, producer in `TẠM DỪNG` | **Điều hành** → **Nhận & xử lý** |
+| | ① Xác nhận | **Xác nhận – quá tải thật** hoặc **Báo giả** |
+| | ② Chuyển tải | Nhập X (có gợi ý) → **Xác nhận chuyển tải** → dữ liệu chạy tiếp |
+| các mốc sau | ③ Theo dõi: tải mô phỏng Trạm Y giảm, Trạm 3 tăng X | Ghi nguyên nhân; **Chuyển thêm** nếu vẫn ≥ 90% |
+| ~2 mốc sau | Tải mô phỏng < 85% hai lần → cảnh báo tự đóng | Xem thẻ **Kết quả xử lý** |
+| 05/02 ~01:00 | Tải đo < 85% hai lần → **trả tải** tự động | — |
+| 05/02 ~19:00 | Đỏ lần hai → dừng lại | Xử lý, hoặc thử **Báo giả** |
 
-The data is 2017–2018, so panels do not use the Grafana time picker: "last 24 h" means 24 h back from the newest
-record in `cleaned`, and the X axis is *hours relative to the newest record* (0 = now).
-The dashboard reads alerts with `run_id = 'LIVE'` (detector default for `--source db`).
+Cuối cùng mở trang **Báo cáo quản trị** để xem KPI.
 
-**Tiếp nhận** calls `GET http://localhost:8000/ack?alert_id=<id>&user=<grafana login>`:
-only an `OPEN` alert becomes `ACK` with `acked_by` and `acked_at = now()`; clicking again does not overwrite it.
-The API then redirects (303) back to the dashboard. Unknown `alert_id` → 404.
+- Dừng script bằng **Ctrl+C**, không dùng Ctrl+Z: Ctrl+Z chỉ treo tiến trình, lần chạy sau sẽ bị chặn.
+- Chạy lại script thì dữ liệu tự reset.
+- Muốn phát theo khoảng thời gian (`--start`, `--days`, `--end`), xem `producer/README.md`.
 
-Try the dashboard without producer/detector (**overwrites LIVE alerts and cleaned for 2017-11-01**):
+## 4. Dashboard
 
-```bash
-docker compose exec -T timescaledb psql -U energy -d energy < sql/demo_dashboard_seed.sql
-# open the dashboard, click "Tiếp nhận" on the Trạm Y Red alert, then check:
-docker compose exec timescaledb psql -U energy -d energy \
-  -c "SELECT alert_id, status, acked_by, acked_at FROM fact_alert WHERE run_id='LIVE' ORDER BY alert_id"
-```
+Ba trang, tự làm mới mỗi 5 giây. Chỉ có một người trực là "Người trực A".
 
-If you edit the dashboard in the Grafana UI, export it (Share → Export → *Save to file*) back to
-`grafana/dashboards/dashboard.json` and keep `uid = energy-alert` (the API redirect uses it).
+| Trang | Nội dung |
+|---|---|
+| **Điều hành** | 4 ô trạm (% tải, xu hướng, "Còn X phút"). **Hàng đợi cảnh báo** xếp theo: đang mở → mức (Đỏ > Vàng > Cảm biến) → TTB (khung 10 phút) → khách hàng ưu tiên → % tải. Dòng quá hạn nhấp nháy (Đỏ chưa nhận > 3', Vàng > 15'). Bảng kết quả xử lý sự cố Đỏ |
+| **Chi tiết trạm** | Khi có Đỏ: khung xử lý 3 bước kèm đồng hồ /16' và giờ thật của từng bước. Số liệu hiện tại, biểu đồ 24 giờ (tải đo / tải mô phỏng), trạm dự phòng, lịch sử cảnh báo 7 ngày |
+| **Báo cáo quản trị** | 4 KPI kèm mục tiêu và Đạt/Chưa đạt: nhận TB ≤ 3', chuyển tải TB ≤ 16', Đỏ bị bỏ lỡ = 0, báo giả / tổng. Biểu đồ cảnh báo theo trạm × mức. Bảng kết quả xử lý sự cố Đỏ |
 
-## Alert detector
+Quy trình xử lý sự cố Đỏ:
+1. **Xác nhận** quá tải thật, hoặc **Báo giả** (đóng ngay, `verdict = FALSE_ALARM`).
+2. **Chuyển tải** sang trạm lân cận:
+   - cần giảm = S_H − 0,85 × định mức;
+   - trạm lân cận nhận tối đa = 0,9 × định mức lân cận − S_H lân cận.
+3. **Theo dõi**:
+   - cảnh báo đóng khi tải **mô phỏng** < 85% hai lần liên tiếp;
+   - chuyển tải được trả khi tải **đo** < 85% hai lần liên tiếp.
 
-Python 3.10 or newer is required. CSV replay uses only the Python standard library:
+Màu chỉ dùng để báo trạng thái: Đỏ `#E02F44`, Vàng `#FADE2A`, Xám `#8E8E8E` (cảm biến), Xanh `#56A64B`. Xanh dương là số liệu mô phỏng.
 
-```bash
-python detector/detector.py --source csv --method A
-python detector/detector.py --source csv --method B
-python -m unittest discover -s detector -v
-```
+## 5. Luật phát hiện
 
-The commands write `alerts_A.csv` and `alerts_B.csv` in the current directory. Override the input, parameters, or output with `--input`, `--params`, and `--output`. Each output row is the latest snapshot of one alert, with `opened_ts`, `escalated_ts`, and `resolved_ts` in data time; a still-open alert has an empty `resolved_ts`. These files do not contain the answer key. A uses load thresholds; B adds stuck-sensor detection and time-to-breach (TTB).
+Ngưỡng lấy từ `param_threshold`, không hard-code. Detector **không đọc** `event_label`.
 
-For database mode, install `pip install -r detector/requirements.txt`, start a compatible TimescaleDB with this repository's schema and populated `param_threshold` and `cleaned` tables, and set `DATABASE_URL` locally. Run:
-
-```bash
-python detector/detector.py --source db --method B --run-id LIVE
-python detector/detector.py --source db --method B --run-id EVAL_B --once
-```
-
-The detector polls every 10 seconds by default (`--poll-seconds`). `--once` drains current data and exits. Its database user must be able to create `detector_checkpoint` and read `cleaned` and `param_threshold` and write `fact_alert`. Checkpoints and alert changes commit together; restarting with the same run ID resumes per station and preserves ACK status. Use a different run ID for each method or independent replay. Only one detector may run with a given run ID. The producer/ELT pipeline must supply `cleaned` in timestamp order per station; late rows older than a checkpoint are not replayed.
-
-Both modes calculate the 1-hour rate only across consecutive 15-minute samples. A stuck sensor is detected at the fourth identical S_H sample; overload checks are skipped while stuck, and the sensor alert resolves when S_H changes. An overload alert resolves after two consecutive samples below the station's close threshold; RED stays RED until resolution, retaining `escalated_ts`. If a TTB jumps directly to the RED condition, an alert can open RED without a preceding YELLOW. These conventions are shared by both modes. The detector never uses `event_label` for detection.
-
-## Common commands
+- Tốc độ = `load_pct` − `load_pct` 4 bản ghi trước (%/giờ).
+- TTB = (100 − `load_pct`) / tốc độ × 60. TTB là NULL khi tốc độ ≤ 0 hoặc `load_pct` ≥ 100.
+- **Đỏ:** ≥ 100% hoặc TTB ≤ 30. **Vàng:** ≥ 90% hoặc TTB ≤ 60. **Đóng:** < 85% ở 2 bản ghi liên tiếp.
+- **Cảm biến kẹt:** S_H không đổi ≥ 4 bản ghi → cảnh báo SENSOR, bỏ qua bước xét quá tải.
 
 ```bash
-docker compose logs -f <service>     # follow logs
-docker compose restart <service>
-docker compose down                  # stop, keep data
-docker compose down -v               # stop and DELETE volumes (full reset)
+python detector/detector.py --source csv --method A     # EVAL_A: chỉ ngưỡng %
+python detector/detector.py --source csv --method B     # EVAL_B: thêm cảm biến kẹt + TTB
+python -m unittest discover -s detector -v              # unit test
 ```
 
-Files in `db/init/` run only when the database volume is empty. After editing them, or after changing `param_threshold.csv` / `event_label.csv`, run:
+## 6. Trạm và dữ liệu
+
+| Trạm | Nguồn | Loại | Định mức | Ghi chú |
+|---|---|---|---|---|
+| `TRAM_Y` | ETTm1 | Thật | 20,45 | Sát giới hạn (P99 đã loại lỗi × 1,05); trạm dùng cho Red Alert |
+| `TRAM_2` | ETTm2 | Thật | 68,99 | |
+| `TRAM_3` | ETTm1 | Dẫn xuất (+7 ngày) | 27,86 | Còn dư công suất; nhận chuyển tải từ Trạm Y |
+| `TRAM_4` | ETTm2 | Dẫn xuất (+14 ngày) | 69,05 | |
+
+- Giai đoạn hiệu chỉnh ngưỡng: 01/07/2016 → 31/10/2017. Giai đoạn kiểm thử: 01/11/2017 → 26/06/2018.
+- Nhãn sự cố chỉ nằm trong `eval.event_label`. Bảng `raw` và `cleaned` không có nhãn.
+
+## 7. Hạn chế
+
+- Chỉ có 2 trạm thật; Trạm 3 và Trạm 4 là bản dời ngày.
+- Tác dụng chuyển tải là mô phỏng; hệ thống không điều khiển lưới.
+- Dừng dữ liệu khi người trực xử lý là một giả định về thời gian.
+- Leo thang Vàng (15 phút) chỉ có ý nghĩa khi chạy thời gian thật (×1).
+- Định mức và hệ số k là giả định của nhóm.
+- Ngoài phạm vi: trường hợp trạm dự phòng cũng cao tải, tổn thất điện năng.
+
+## 8. Lệnh thường dùng
 
 ```bash
-docker compose down -v && docker compose up -d
+docker compose logs -f <service>
+docker compose down              # dừng, giữ dữ liệu
+docker compose down -v           # dừng và XÓA dữ liệu (cần khi sửa db/init/ hoặc file CSV tham số)
 ```
 
-## Substations and data provenance
-
-| Substation | Source | Origin  | Note                                        |
-|------------|--------|---------|---------------------------------------------|
-| `TRAM_Y`   | ETTm1  | REAL    | Near its limit (k = 1.05); Red Alert case   |
-| `TRAM_2`   | ETTm2  | REAL    |                                             |
-| `TRAM_3`   | ETTm1  | DERIVED | Shifted +7 days; spare capacity (k = 1.43), receives load transfer from TRAM_Y |
-| `TRAM_4`   | ETTm2  | DERIVED | Shifted +14 days                            |
-
-- Injected overload incidents are `SIMULATED`. Real overloads (TRAM_Y) and real sensor faults are `REAL`.
-- Provenance is stored **only** in `eval.event_label` (`source_type`, `detail`). `raw` and `cleaned` carry no labels, so the detector cannot see the answers.
-- Calibration period: 2016-07-01 → 2017-10-31. Test period: 2017-11-01 → 2018-06-26. All thresholds are computed on the calibration period only.
-
-## Git workflow
-
-- Never commit `.env`.
+Không commit file `.env`. Grafana và FastAPI cũ được giữ trong `archive/`, không còn dùng.
