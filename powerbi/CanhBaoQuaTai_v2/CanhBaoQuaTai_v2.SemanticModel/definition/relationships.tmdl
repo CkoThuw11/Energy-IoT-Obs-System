@@ -1,0 +1,56 @@
+relationship dab70515-ee69-44dc-8759-7d31c9c4ddc6
+	fromColumn: dim_customer_group.station_id
+	toColumn: dim_station.station_id
+
+relationship 4acc56b5-ec2b-4305-9d38-28d672af7acf
+	fromColumn: fact_load_hourly.station_id
+	toColumn: dim_station.station_id
+
+relationship ea253014-3432-4bda-b256-b3ee888a44be
+	fromColumn: fact_overload_episode.station_id
+	toColumn: dim_station.station_id
+
+relationship 18385af1-2d1a-42ed-ad07-afbb3bc98edf
+	fromColumn: fact_sensor_fault.station_id
+	toColumn: dim_station.station_id
+
+relationship cfc3645f-42a1-4c87-a878-26c99e5d75ba
+	fromColumn: hist_alert.station_id
+	toColumn: dim_station.station_id
+
+relationship 3fd820ef-8aad-4542-91f6-e7f3186d5315
+	fromColumn: live_alert.station_id
+	toColumn: dim_station.station_id
+
+relationship e20beaea-60fb-4f16-867a-41966556b73a
+	fromColumn: live_transfer.source_station
+	toColumn: dim_station.station_id
+
+relationship 76b58327-a25e-4a3b-b073-da54d4d39886
+	isActive: false
+	fromColumn: live_transfer.target_station
+	toColumn: dim_station.station_id
+
+relationship b8fc49ff-71f6-4b07-b8d9-a3bd2e599fde
+	fromColumn: fact_load_hourly.date
+	toColumn: dim_date.date
+
+relationship 73c0bbbb-c097-45eb-add1-a62d4b33e64d
+	fromColumn: fact_overload_episode.date
+	toColumn: dim_date.date
+
+relationship 553d73ed-bd47-40a6-b02f-2f5ccc72de6a
+	fromColumn: fact_sensor_fault.date
+	toColumn: dim_date.date
+
+relationship 87dd968c-7cbe-4a6a-9c51-83ea057dbdbc
+	fromColumn: hist_alert.date
+	toColumn: dim_date.date
+
+relationship 8770b2af-1442-4efa-aba5-c08ed6d5c53d
+	fromColumn: live_alert.date
+	toColumn: dim_date.date
+
+relationship c78a2757-679f-4dfc-b78c-e88efcca52ca
+	fromColumn: live_transfer.date
+	toColumn: dim_date.date

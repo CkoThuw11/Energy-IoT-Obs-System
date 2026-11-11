@@ -1,0 +1,250 @@
+table live_alert
+	lineageTag: a1c6d0e0-f6cf-484b-ab90-3eb8dc43e92d
+
+	column alert_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 2651a139-eb47-4d1c-97a2-51be53535aa0
+		summarizeBy: none
+		sourceColumn: alert_id
+
+	column run_id
+		dataType: string
+		lineageTag: cf3ef71b-ab3a-49cc-93c9-08a9328ff400
+		summarizeBy: none
+		sourceColumn: run_id
+
+	column station_id
+		dataType: string
+		lineageTag: aaba43cd-a46f-40b7-a352-71e3ac892556
+		summarizeBy: none
+		sourceColumn: station_id
+
+	column alert_type
+		dataType: string
+		lineageTag: 200e82d3-9968-4fa2-8056-394ee6af62b7
+		summarizeBy: none
+		sourceColumn: alert_type
+
+	column severity
+		dataType: string
+		lineageTag: beb032d5-49da-4a40-9f16-c64130592413
+		summarizeBy: none
+		sourceColumn: severity
+
+	column trigger_rule
+		dataType: string
+		lineageTag: fdbbab05-65b2-43a9-a0ba-18c96ba2dac9
+		summarizeBy: none
+		sourceColumn: trigger_rule
+
+	column status
+		dataType: string
+		lineageTag: ec94d61c-d4ab-4a0a-bcec-9dd8ca4392e2
+		summarizeBy: none
+		sourceColumn: status
+
+	column severity_rank
+		dataType: int64
+		formatString: 0
+		lineageTag: 14dccc58-ab3e-467c-8bff-b010a9b18c9d
+		summarizeBy: none
+		sourceColumn: severity_rank
+
+	column opened_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: ec1e3a9d-2298-451b-9b32-572dc1adc35e
+		summarizeBy: none
+		sourceColumn: opened_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column escalated_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 66ded16e-5dca-4666-beab-117e7c2de148
+		summarizeBy: none
+		sourceColumn: escalated_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column resolved_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 1e15cf3f-d45e-42af-91cf-0a77a629c33f
+		summarizeBy: none
+		sourceColumn: resolved_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column acked_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 7aedfbe0-e0a7-4472-bb14-da4293ba06f8
+		summarizeBy: none
+		sourceColumn: acked_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column action_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 273a8a54-f14f-4f1a-bd90-62213c03423c
+		summarizeBy: none
+		sourceColumn: action_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column date
+		dataType: dateTime
+		formatString: dd/mm/yyyy
+		lineageTag: fedc2034-aa3f-47b0-96dc-22fca84140d8
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column year_month
+		dataType: string
+		lineageTag: 769cb091-2c2d-4d32-a14d-23038b8cd32b
+		summarizeBy: none
+		sourceColumn: year_month
+
+	column open_hour
+		dataType: int64
+		formatString: 0
+		lineageTag: db2fba98-5bef-4d29-8b1a-8031ab21d375
+		summarizeBy: none
+		sourceColumn: open_hour
+
+	column duration_min
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 5d0c71f4-51be-49d1-b505-fcd31738f0aa
+		summarizeBy: none
+		sourceColumn: duration_min
+
+	column peak_load_pct
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 40b0895a-d4b7-4e93-9ea0-dafe342e06f1
+		summarizeBy: none
+		sourceColumn: peak_load_pct
+
+	column received_load
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 40be4ea1-b561-4f9c-9d7a-43acae1d46af
+		summarizeBy: none
+		sourceColumn: received_load
+
+	column opened_while_receiving
+		dataType: int64
+		formatString: 0
+		lineageTag: 3d6f0148-a77a-4bcd-9deb-e6b69fe6ec59
+		summarizeBy: none
+		sourceColumn: opened_while_receiving
+
+	column acked_by
+		dataType: string
+		lineageTag: e7728e88-c5a7-45aa-8e50-17073bf96eea
+		summarizeBy: none
+		sourceColumn: acked_by
+
+	column verdict
+		dataType: string
+		lineageTag: e37c0f58-62de-48cb-b13d-1b33c66c8a0c
+		summarizeBy: none
+		sourceColumn: verdict
+
+	column opened_at_local
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 0a44bbcb-62d6-41e6-8441-2e9cbf3b0e19
+		summarizeBy: none
+		sourceColumn: opened_at_local
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column real_date
+		dataType: dateTime
+		formatString: dd/mm/yyyy
+		lineageTag: 301a071a-f5ca-4a7e-b1b6-8da0eced2ade
+		summarizeBy: none
+		sourceColumn: real_date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column handle_min
+		dataType: double
+		formatString: #,0.##
+		lineageTag: d1f22704-6496-4beb-b3c1-16290578f738
+		summarizeBy: none
+		sourceColumn: handle_min
+
+	column deadline_min
+		dataType: int64
+		formatString: 0
+		lineageTag: 6802179f-5e7f-4e70-92ef-ec931c48d0b7
+		summarizeBy: none
+		sourceColumn: deadline_min
+
+	column is_handled
+		dataType: int64
+		formatString: 0
+		lineageTag: 02ed2db9-6e33-4cd3-aaa0-e36ee4c946ca
+		summarizeBy: none
+		sourceColumn: is_handled
+
+	column is_on_time
+		dataType: int64
+		formatString: 0
+		lineageTag: 18fc0169-1667-446a-bd6f-0dd6265bc2dc
+		summarizeBy: none
+		sourceColumn: is_on_time
+
+	column is_late
+		dataType: int64
+		formatString: 0
+		lineageTag: f28d46df-011f-42d6-a99f-2cb3fd9af5b3
+		summarizeBy: none
+		sourceColumn: is_late
+
+	column is_missed
+		dataType: int64
+		formatString: 0
+		lineageTag: 164f513d-09dc-4041-8cbb-0891c78fe47f
+		summarizeBy: none
+		sourceColumn: is_missed
+
+	column is_false_alarm_verdict
+		dataType: int64
+		formatString: 0
+		lineageTag: a40ee524-9549-4271-9923-bb412f140656
+		summarizeBy: none
+		sourceColumn: is_false_alarm_verdict
+
+	column matched_events
+		dataType: string
+		lineageTag: 84ffa1d1-4c3e-4bb1-b98c-19aa46fa98dd
+		summarizeBy: none
+		sourceColumn: matched_events
+
+	column is_unmatched
+		dataType: int64
+		formatString: 0
+		lineageTag: 8cb49867-a28f-4a84-aa9b-ec51ee6f1f97
+		summarizeBy: none
+		sourceColumn: is_unmatched
+
+	partition live_alert = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbLive ),
+				    Source = Db{[Schema = "gold", Item = "fact_alert"]}[Data],
+				    Run = Table.SelectRows ( Source, each [run_id] = "LIVE" ),
+				    Typed = Table.TransformColumnTypes ( Run, {{"alert_id", Int64.Type}, {"run_id", type text}, {"station_id", type text}, {"alert_type", type text}, {"severity", type text}, {"trigger_rule", type text}, {"status", type text}, {"severity_rank", Int64.Type}, {"opened_ts", type datetime}, {"escalated_ts", type datetime}, {"resolved_ts", type datetime}, {"acked_ts", type datetime}, {"action_ts", type datetime}, {"date", type date}, {"year_month", type text}, {"open_hour", Int64.Type}, {"duration_min", type number}, {"peak_load_pct", type number}, {"received_load", type number}, {"opened_while_receiving", Int64.Type}, {"acked_by", type text}, {"verdict", type text}, {"opened_at_local", type datetime}, {"real_date", type date}, {"handle_min", type number}, {"deadline_min", Int64.Type}, {"is_handled", Int64.Type}, {"is_on_time", Int64.Type}, {"is_late", Int64.Type}, {"is_missed", Int64.Type}, {"is_false_alarm_verdict", Int64.Type}, {"matched_events", type text}, {"is_unmatched", Int64.Type}}, "en-US" )
+				in
+				    Typed

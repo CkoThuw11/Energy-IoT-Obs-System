@@ -1,8 +1,10 @@
-"""Trang 2 – Chi tiết trạm.
+"""Trang 2 – Chi tiết trạm (v2, sped.md §4–5).
 
-Một layout duy nhất. Khi trạm có cảnh báo Đỏ đang mở, khung "Xử lý sự cố" (3 bước) được chèn lên
-trên cùng: ① Xác nhận → ② Chuyển tải sang trạm lân cận → ③ Theo dõi. Dưới mỗi bước đã xong ghi giờ thật.
-Sau khi cảnh báo tự đóng, thẻ "Kết quả xử lý" của cảnh báo Đỏ gần nhất vẫn được giữ.
+Thứ tự: trạm dự phòng (lên đầu) → khung xử lý cảnh báo đang mở → số liệu hiện tại → biểu đồ → lịch sử.
+Đỏ: MỘT khung chuyển tải (lượng điền sẵn, trạng thái trạm nhận) với 2 nút "Xác nhận chuyển tải" / "Báo giả";
+bấm chuyển tải tự ghi verdict = REAL. Vàng: nút "Theo dõi".
+Thời hạn theo GIỜ DỮ LIỆU: Đỏ ≤ 30 phút (lên Đỏ → chuyển tải), Vàng ≤ 60 phút (mở → theo dõi).
+Dữ liệu không dừng: không ai xử lý thì cảnh báo giữ nguyên tới khi tải tự về bình thường (Đỏ → bị bỏ lỡ).
 Tải sau chuyển tải là MÔ PHỎNG (v_load_sim): trạm nguồn − X, trạm nhận + X; số đo gốc không đổi.
 """
 
@@ -18,12 +20,12 @@ import streamlit as st
 import common
 import db
 
-STEPS = ["① Xác nhận", "② Chuyển tải", "③ Theo dõi"]
 MEASURED, SIMULATED = "Tải đo", "Tải sau chuyển tải (mô phỏng)"
 LINE_COLORS = {MEASURED: "#111827", SIMULATED: "#1D4ED8"}
 CHART_HEIGHT = 460
 INK_BLACK = "#111827"
 CHART_HOURS = 24
+RETURN_LABEL = {"SAFE": "An toàn (tải đo < 85% hai lần)", "TIMEOUT": "Hết 2 giờ, tải đo < 90%"}
 
 
 def render() -> None:
@@ -52,11 +54,16 @@ def station_block(station: str) -> None:
     p = params[station]
     neighbor = latest_all.get(p["neighbor_station_id"]) if p["neighbor_station_id"] else None
     n_params = params.get(p["neighbor_station_id"]) if neighbor else None
-    common.topbar(f"Chi tiết trạm · {latest['station_name']}")
-    red = db.open_alert(station, "OVERLOAD")
-    if red and red["severity"] == "RED":
+    common.topbar(f"Chi tiết trạm · {latest['station_name']}", data_ts=common.fmt_ts(latest["ts"]))
+    common.section("Trạm dự phòng · trạng thái hiện tại")
+    neighbor_panel(neighbor, n_params)
+    alert = db.open_alert(station, "OVERLOAD")
+    if alert and alert["severity"] == "RED":
         common.section("Xử lý sự cố Đỏ")
-        incident_panel(red, latest, p, neighbor, n_params)
+        incident_panel(alert, latest, p, neighbor, n_params)
+    elif alert and alert["severity"] == "YELLOW":
+        common.section("Cảnh báo Vàng")
+        yellow_panel(alert)
     else:
         last = db.last_red_result(station)
         if last:
@@ -66,10 +73,6 @@ def station_block(station: str) -> None:
     station_metrics(latest, p, station)
     common.section(f"Diễn biến tải {CHART_HOURS} giờ gần nhất")
     load_chart_block(station, latest["ts"], p)
-    common.section("Trạm dự phòng")
-    left, _ = st.columns([1, 1])
-    with left:
-        neighbor_panel(neighbor, n_params)
     common.section("Chuyển tải · lịch sử cảnh báo 7 ngày dữ liệu")
     transfer_table(station)
     history_table(station, latest["ts"] - timedelta(days=7))
@@ -228,7 +231,7 @@ def neighbor_panel(neighbor: dict | None, n_params: dict | None) -> None:
     capacity = n_params["yellow_pct"] / 100 * neighbor["rated_load"] - s_h
     note = (f"{common.SIM_TAG} · đo {neighbor['load_pct']:.1f}% · " if simulated else "") + common.trend_html(
         neighbor["speed_pct_h"])
-    a, b = st.columns(2)
+    a, b, _ = st.columns(3)
     a.markdown(common.metric_card(neighbor["station_name"], f"{load:.1f}%", common.load_ink(load, n_params),
                                   note + common.load_bar(load, n_params)), unsafe_allow_html=True)
     b.markdown(common.metric_card("Nhận thêm tối đa", f"{capacity:.2f}",
@@ -236,24 +239,46 @@ def neighbor_panel(neighbor: dict | None, n_params: dict | None) -> None:
                                   f"= {n_params['yellow_pct']}% × định mức − S_H hiện tại"), unsafe_allow_html=True)
 
 
+def outcome(alert: dict) -> tuple[str, str]:
+    """Kết quả một cảnh báo Đỏ: (nhãn, màu)."""
+    if alert["verdict"] == "FALSE_ALARM":
+        return "Báo giả", common.INK["GRAY"]
+    if alert["is_missed"]:
+        return "Bị bỏ lỡ", common.INK["RED"]
+    if alert["action_ts"] is None:
+        return ("Quá hạn – chưa xử lý" if alert["is_overdue"] else "Chưa xử lý"), common.INK["RED"]
+    return ("Chuyển tải trễ", common.INK["RED"]) if alert["is_late"] else ("Chuyển tải đúng hạn", common.INK["GREEN"])
+
+
+def result_text(alert: dict) -> str:
+    if alert["severity"] != "RED":
+        return "—"
+    label, ink = outcome(alert)
+    return common.span(label, ink)
+
+
 TRANSFER_COLUMNS = [
     ("alert_id", "Cảnh báo", lambda v, r: f"<b>#{v}</b>"),
     ("source_station", "Hướng", lambda v, r: f"{v} → {r['target_station']}"),
     ("amount", "Lượng", lambda v, r: f"{v:.2f}"),
     ("effective_from_ts", "Từ mốc", lambda v, r: common.fmt_ts(v)),
-    ("effective_to_ts", "Trả tải", lambda v, r: common.fmt_ts(v) if v else common.span("đang hiệu lực", common.INK["BLUE"])),
+    ("effective_to_ts", "Trả tải", lambda v, r: common.fmt_ts(v) if v else (
+        common.span("QUÁ HẠN (≥ 2 giờ)", common.INK["RED"]) if r["is_overdue"]
+        else common.span("đang hiệu lực", common.INK["BLUE"]))),
+    ("return_reason", "Lý do trả", lambda v, r: RETURN_LABEL.get(v, "—")),
     ("done_by", "Người thực hiện", None),
 ]
 HISTORY_COLUMNS = [
     ("alert_id", "#", lambda v, r: f"<b>{v}</b>"),
     ("alert_type", "Loại", lambda v, r: "Quá tải" if v == "OVERLOAD" else "Cảm biến"),
     ("severity", "Mức", lambda v, r: common.chip(v)),
-    ("status", "Trạng thái", lambda v, r: {"OPEN": "Chưa nhận", "ACK": "Đã nhận", "ACTION_TAKEN": "Đã chuyển tải",
+    ("status", "Trạng thái", lambda v, r: {"OPEN": "Chưa xử lý", "ACK": "Đang theo dõi", "ACTION_TAKEN": "Đã chuyển tải",
                                             "RESOLVED": "Đã đóng"}.get(v, v)),
     ("opened_ts", "Mở", lambda v, r: common.fmt_ts(v)),
     ("resolved_ts", "Đóng", lambda v, r: common.fmt_ts(v)),
     ("peak_load_pct", "Đỉnh tải", lambda v, r: f"{v:.1f}%" if v is not None else "—"),
-    ("verdict", "Xác minh", lambda v, r: {"REAL": "Quá tải thật", "FALSE_ALARM": "Báo giả"}.get(v, "—")),
+    ("is_missed", "Kết quả", lambda v, r: result_text(r) if r["status"] == "RESOLVED" else "—"),
+    ("received_load", "Đang nhận tải", lambda v, r: f"+{v:.2f}" if v else "—"),
     ("root_cause", "Nguyên nhân", lambda v, r: v or "—"),
 ]
 
@@ -265,7 +290,8 @@ def transfer_table(station: str) -> None:
         return
     st.markdown(f"**Chuyển tải ({common.SIM_TAG})**")
     st.markdown(common.html_table(items, TRANSFER_COLUMNS,
-                                  stripe=lambda r: "#9CA3AF" if r["effective_to_ts"] else common.INK["BLUE"]),
+                                  stripe=lambda r: "#9CA3AF" if r["effective_to_ts"] else
+                                  (common.INK["RED"] if r["is_overdue"] else common.INK["BLUE"])),
                 unsafe_allow_html=True)
 
 
@@ -280,107 +306,98 @@ def history_table(station: str, since: datetime) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Khung xử lý sự cố Đỏ (3 bước)
+# Khung cảnh báo Vàng / Đỏ
 # ---------------------------------------------------------------------------
-def current_step(alert: dict) -> int:
-    if alert["verdict"] is None:
-        return 0
-    return 1 if alert["action_done_at"] is None else 2
+def clock_card(alert: dict) -> str:
+    """Đồng hồ theo giờ dữ liệu so với thời hạn của mức."""
+    waited, deadline = alert["data_wait_min"], alert["deadline_min"]
+    handled = alert["handled_ts"] is not None
+    note = (f"≈ {common.fmt_minutes(waited * 60 / common.DEMO_SPEED)} thật ở ×{common.DEMO_SPEED}"
+            if waited is not None else "")
+    if handled:
+        note = "Đã xử lý · " + note
+    elif alert["is_overdue"]:
+        note = common.span("QUÁ HẠN", common.INK["RED"]) + " · " + note
+    return common.metric_card("Đồng hồ (giờ dữ liệu)", f"{waited:.0f} / {deadline} phút" if waited is not None else "—",
+                              common.elapsed_ink(waited, deadline), note)
+
+
+def yellow_panel(alert: dict) -> None:
+    with st.container(border=True):
+        badge = common.chip("YELLOW", f"Cảnh báo Vàng #{alert['alert_id']}")
+        st.markdown(f"{badge} &nbsp; <b>Bấm “Theo dõi” trong {common.YELLOW_DEADLINE_MIN} phút dữ liệu "
+                    f"kể từ lúc mở</b>", unsafe_allow_html=True)
+        cards = [
+            common.metric_card("Mở lúc (giờ dữ liệu)", common.fmt_ts(alert["opened_ts"])[11:], common.INK["AMBER"],
+                               common.fmt_ts(alert["opened_ts"])[:10]),
+            clock_card(alert),
+            common.metric_card("Người theo dõi", alert["acked_by"] or "Chưa có",
+                               common.INK["GREEN"] if alert["acked_by"] else common.INK["RED"],
+                               f"Từ mốc {common.fmt_ts(alert['acked_ts'])}" if alert["acked_ts"] else ""),
+        ]
+        for col, card in zip(st.columns(3), cards):
+            col.markdown(card, unsafe_allow_html=True)
+        if alert["status"] == "OPEN" and st.button("Theo dõi", type="primary", key=f"follow_{alert['alert_id']}"):
+            db.follow(alert["alert_id"], common.operator())
+            st.rerun()
 
 
 def incident_panel(alert: dict, latest: dict, p: dict, neighbor: dict | None, n_params: dict | None) -> None:
     with st.container(border=True):
         incident_header(alert)
-        step = current_step(alert)
-        if step == 0:
-            accept_step(alert)
-        elif step == 1:
+        if alert["action_ts"] is None:
             transfer_step(alert, latest, p, neighbor, n_params)
         else:
             follow_step(alert, latest, p, neighbor, n_params)
 
 
 def incident_header(alert: dict) -> None:
-    elapsed = alert["elapsed_sec"] or 0
-    badge = common.chip("RED", f"Cảnh báo Đỏ #{alert['alert_id']}")
-    st.markdown(f"{badge} &nbsp; "
-                f"<b>Quy trình 3 bước · mục tiêu chuyển tải trong {common.TARGET_MIN} phút</b>",
+    badge = common.chip("RED", f"Cảnh báo Đỏ #{alert['alert_id']}", blink=bool(alert["is_overdue"]))
+    st.markdown(f"{badge} &nbsp; <b>Chuyển tải trong {common.RED_DEADLINE_MIN} phút dữ liệu kể từ lúc lên Đỏ</b>",
                 unsafe_allow_html=True)
+    label, ink = outcome(alert)
     cards = [
-        common.metric_card("Mở lúc (giờ dữ liệu)", str(alert["opened_ts"])[11:16], common.INK["RED"],
-                           str(alert["opened_ts"])[:10]),
-        common.metric_card("Người nhận", alert["acked_by"] or "Chưa nhận",
-                           common.INK["GREEN"] if alert["acked_by"] else common.INK["RED"]),
-        common.metric_card("Đồng hồ (giờ thật)", f"{common.fmt_minutes(elapsed)} / {common.TARGET_MIN}:00",
-                           common.elapsed_ink(elapsed),
-                           "Dừng khi xác nhận chuyển tải" if alert["action_done_at"] is None else "Đã chuyển tải"),
+        common.metric_card("Lên Đỏ lúc (giờ dữ liệu)", common.fmt_ts(alert["escalated_ts"])[11:], common.INK["RED"],
+                           common.fmt_ts(alert["escalated_ts"])[:10]),
+        clock_card(alert),
+        common.metric_card("Trạng thái", label, ink,
+                           f"{alert['acked_by']} · chuyển tải lúc {common.fmt_ts(alert['action_ts'])}"
+                           if alert["action_ts"] else "Dữ liệu vẫn chạy trong lúc chờ xử lý"),
     ]
     for col, card in zip(st.columns(3), cards):
         col.markdown(card, unsafe_allow_html=True)
-    step_bar(alert, current_step(alert))
-
-
-def step_times(alert: dict) -> list[datetime | None]:
-    """Giờ thật hoàn thành từng bước: ① xác nhận, ② chuyển tải, ③ cảnh báo tự đóng."""
-    return [alert["verified_at"], alert["action_done_at"], alert["resolved_at"]]
-
-
-def step_bar(alert: dict, step: int) -> None:
-    """Thanh 3 bước; dưới mỗi bước đã xong ghi giờ thật và thời gian kể từ lúc mở."""
-    cells = []
-    for index, (label, done_at) in enumerate(zip(STEPS, step_times(alert))):
-        cls = "step done" if index < step else "step now" if index == step else "step"
-        mark = "✓ " if index < step else ""
-        when = ""
-        if index < step and done_at:
-            after = common.fmt_minutes((done_at - alert["opened_at"]).total_seconds())
-            when = f'<div class="when">{common.fmt_clock(done_at)} · sau {after}</div>'
-        cells.append(f'<div class="{cls}">{mark}{label}{when}</div>')
-    st.markdown('<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0">'
-                + "".join(cells) + "</div>", unsafe_allow_html=True)
 
 
 def result_panel(alert: dict) -> None:
-    """Thẻ kết quả của cảnh báo Đỏ thật đã tự đóng: thời gian, lượng chuyển, trạng thái chuyển tải."""
+    """Thẻ kết quả của cảnh báo Đỏ đã đóng: đúng hạn / trễ / bỏ lỡ / báo giả, lượng chuyển, trả tải."""
     items = db.transfers(alert_id=alert["alert_id"])
     moved = sum(x["amount"] for x in items)
-    returned = [x["effective_to_ts"] for x in items]
-    active = any(t is None for t in returned)
+    active = [x for x in items if x["effective_to_ts"] is None]
     target_name = db.params_by_station()[items[0]["target_station"]]["station_name"] if items else ""
-    act_sec = (alert["action_done_at"] - alert["opened_at"]).total_seconds() if alert["action_done_at"] else None
+    label, ink = outcome(alert)
     with st.container(border=True):
         badge = common.chip("NORMAL", f"Cảnh báo Đỏ #{alert['alert_id']} · đã đóng")
-        st.markdown(f"{badge} &nbsp; <b>Mở {common.fmt_ts(alert['opened_ts'])} → đóng "
+        st.markdown(f"{badge} &nbsp; <b>Lên Đỏ {common.fmt_ts(alert['escalated_ts'])} → đóng "
                     f"{common.fmt_ts(alert['resolved_ts'])} (giờ dữ liệu) · đỉnh {alert['peak_load_pct']:.1f}%</b>",
                     unsafe_allow_html=True)
-        step_bar(alert, len(STEPS))
-        target = common.TARGET_MIN * 60
+        waited = alert["data_wait_min"] if alert["action_ts"] else None
+        last = items[0] if items else None
         cards = [
-            common.metric_card("Chuyển tải sau (giờ thật)", common.fmt_minutes(act_sec),
-                               common.INK["GREEN"] if act_sec is not None and act_sec <= target else common.INK["RED"],
-                               f"Mục tiêu ≤ {common.TARGET_MIN}:00"),
+            common.metric_card("Kết quả", label, ink,
+                               f"Chuyển tải sau {waited:.0f} phút dữ liệu (mục tiêu ≤ {common.RED_DEADLINE_MIN})"
+                               if waited is not None else "Không chuyển tải"),
             common.metric_card("Lượng đã chuyển", f"{moved:.2f}" if items else "—", INK_BLACK,
-                               f"{len(items)} lần · sang {target_name}" if items else "Không chuyển tải"),
-            common.metric_card("Chuyển tải", "Đang hiệu lực" if active else "Đã trả tải" if items else "—",
-                               common.INK["BLUE"] if active else INK_BLACK,
-                               "Trả khi tải đo < ngưỡng đóng 2 lần liên tiếp" if active
-                               else f"Trả lúc {common.fmt_ts(max(returned))}" if items else ""),
+                               f"{len(items)} lần · sang {target_name}" if items else ""),
+            common.metric_card("Trả tải", "Đang hiệu lực" if active else (RETURN_LABEL.get(last["return_reason"], "—")
+                                                                          if last else "—"),
+                               common.INK["RED"] if any(x["is_overdue"] for x in active) else
+                               (common.INK["BLUE"] if active else INK_BLACK),
+                               "Chuyển tải quá hạn (≥ 2 giờ)" if any(x["is_overdue"] for x in active)
+                               else (f"Trả lúc {common.fmt_ts(last['effective_to_ts'])}" if last and not active else "")),
         ]
         for col, card in zip(st.columns(3), cards):
             col.markdown(card, unsafe_allow_html=True)
         root_cause_input(alert)
-
-
-def accept_step(alert: dict) -> None:
-    st.markdown("Xem **Số liệu hiện tại** và **biểu đồ** bên dưới, rồi xác nhận quá tải thật hay báo giả.")
-    a, b = st.columns(2)
-    if a.button("Xác nhận – quá tải thật", type="primary", width="stretch"):
-        db.accept_real(alert["alert_id"], common.operator())
-        st.rerun()
-    if b.button("Báo giả (đóng cảnh báo)", width="stretch"):
-        db.mark_false_alarm(alert["alert_id"], common.operator())
-        st.toast("Đã đóng cảnh báo (báo giả).")
-        st.rerun()
 
 
 def suggested_amount(latest: dict, p: dict) -> tuple[float, float, float]:
@@ -397,6 +414,11 @@ def suggested_amount(latest: dict, p: dict) -> tuple[float, float, float]:
     return need_now, need_1h, math.ceil(max(need_now, need_1h, 0) * 10) / 10
 
 
+def receiver_capacity(neighbor: dict, n_params: dict) -> float:
+    """Trạm nhận nhận thêm tối đa để vẫn < ngưỡng Vàng (giới hạn ngay lúc chuyển)."""
+    return n_params["yellow_pct"] / 100 * neighbor["rated_load"] - neighbor["s_h_sim"]
+
+
 def transfer_preview(latest: dict, neighbor: dict, amount: float, p: dict, n_params: dict) -> str:
     y_after = (latest["s_h_sim"] - amount) / latest["rated_load"] * 100
     n_after = (neighbor["s_h_sim"] + amount) / neighbor["rated_load"] * 100
@@ -407,11 +429,15 @@ def transfer_preview(latest: dict, neighbor: dict, amount: float, p: dict, n_par
 
 def transfer_step(alert: dict, latest: dict, p: dict, neighbor: dict | None, n_params: dict | None,
                   more: bool = False) -> None:
+    """Khung chuyển tải duy nhất: lượng điền sẵn, trạng thái trạm nhận, nút Xác nhận / Báo giả."""
     if neighbor is None:
         st.warning("Trạm không có trạm lân cận để chuyển tải.")
+        if not more and st.button("Báo giả (đóng cảnh báo)", key=f"false_{alert['alert_id']}"):
+            db.mark_false_alarm(alert["alert_id"], common.operator())
+            st.rerun()
         return
     need_now, need_1h, suggestion = suggested_amount(latest, p)
-    capacity = n_params["yellow_pct"] / 100 * neighbor["rated_load"] - neighbor["s_h_sim"]
+    capacity = receiver_capacity(neighbor, n_params)
     if not more:
         cards = [
             common.metric_card(f"Cần giảm ngay (về < {p['close_pct']}%)", f"{max(need_now, 0):.2f}",
@@ -434,12 +460,17 @@ def transfer_step(alert: dict, latest: dict, p: dict, neighbor: dict | None, n_p
     too_much = amount > capacity
     if too_much:
         st.error(f"{neighbor['station_name']} chỉ nhận thêm tối đa {capacity:.2f} để giữ dưới {n_params['yellow_pct']}%.")
-    label = "Chuyển thêm" if more else "Xác nhận chuyển tải"
-    if st.button(label, type="primary", disabled=too_much, key=f"btn_{key}"):
+    left, right = st.columns(2)
+    if left.button("Chuyển thêm" if more else "Xác nhận chuyển tải", type="primary", disabled=too_much,
+                   key=f"btn_{key}", width="stretch"):
         if db.transfer_load(alert["alert_id"], float(amount), neighbor["station_id"], common.operator()):
             st.toast(f"Đã chuyển {amount:.2f} sang {neighbor['station_name']} (mô phỏng từ mốc dữ liệu kế tiếp).")
         else:
-            st.toast("Cảnh báo đã thay đổi trạng thái; không ghi chuyển tải.")
+            st.toast("Không ghi được: cảnh báo đã đổi trạng thái hoặc trạm nhận không còn đủ sức nhận.")
+        st.rerun()
+    if not more and right.button("Báo giả (đóng cảnh báo)", key=f"false_{alert['alert_id']}", width="stretch"):
+        db.mark_false_alarm(alert["alert_id"], common.operator())
+        st.toast("Đã đóng cảnh báo (báo giả).")
         st.rerun()
 
 
@@ -448,6 +479,9 @@ def follow_step(alert: dict, latest: dict, p: dict, neighbor: dict | None, n_par
     moved = sum(x["amount"] for x in items)
     load = latest["load_pct_sim"]
     closing = load < p["close_pct"]
+    if any(x["is_overdue"] for x in items):
+        st.error(f"⚠ Chuyển tải quá hạn: đã chuyển ≥ 2 giờ dữ liệu mà tải đo vẫn ≥ {p['yellow_pct']}%. "
+                 f"Cân nhắc biện pháp khác hoặc chuyển thêm.")
     if items and latest["ts"] <= max(x["effective_from_ts"] for x in items):
         # Chuyển tải có tác dụng từ mốc dữ liệu KẾ TIẾP: chưa có số liệu sau chuyển để đánh giá
         pending = sum(x["amount"] for x in items if x["effective_from_ts"] >= latest["ts"])
@@ -466,8 +500,9 @@ def follow_step(alert: dict, latest: dict, p: dict, neighbor: dict | None, n_par
         st.warning("Tải sau chuyển vẫn cao (tải đo tiếp tục tăng). Có thể chuyển thêm.")
         transfer_step(alert, latest, p, neighbor, n_params, more=True)
     root_cause_input(alert)
-    st.caption(f"Tải sau chuyển tải là mô phỏng (tải đo − lượng chuyển). Cảnh báo đóng khi tải này < {p['close_pct']}% "
-               f"hai lần liên tiếp; chuyển tải tự trả khi TẢI ĐO < {p['close_pct']}% hai lần liên tiếp.")
+    st.caption(f"Cảnh báo đóng khi tải sau chuyển (mô phỏng) < {p['close_pct']}% hai lần liên tiếp. "
+               f"Trả tải khi TẢI ĐO < {p['close_pct']}% hai lần (an toàn), hoặc đã chuyển ≥ 2 giờ và tải đo "
+               f"< {p['yellow_pct']}% (hết thời gian). Quá 2 giờ mà vẫn cao → \"Chuyển tải quá hạn\".")
 
 
 def root_cause_input(alert: dict) -> None:

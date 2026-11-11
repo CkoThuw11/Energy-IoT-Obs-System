@@ -1,22 +1,22 @@
 # Pipeline dữ liệu: producer → raw → cleaned → agg_hourly
 
-Nhánh: `feature/data-pipeline`
+Phiên bản v2 (xem `sped.md` cục bộ / `docs/architecture.md`): `raw` append-only, không dừng khi lên Đỏ.
 
 ```
-scenario_data.csv ──producer.py──► raw ──sp_raw_to_cleaned (job 10 giây)──► cleaned ──(continuous aggregate)──► agg_hourly
+scenario_data.csv ──producer.py (INSERT)──► raw (append-only) ──sp_raw_to_cleaned (job 10 giây, bản mới nhất)──► cleaned ──(continuous aggregate)──► agg_hourly
 ```
 
 | File | Vai trò |
 |---|---|
 | `producer/producer.py` | Phát lại `data/scenario_data.csv` vào `raw` theo thứ tự `ts` |
 | `sql/elt.sql` | Thủ tục `sp_raw_to_cleaned` + đăng ký chạy mỗi 10 giây bằng `add_job` |
-| `sql/check_pipeline.sql` | Kiểm tra nhanh 96 / 96 / 24 dòng mỗi trạm |
+| `sql/check_pipeline.sql` | Kiểm tra nhanh 96 mốc / 96 / 24 dòng mỗi trạm |
 | `db/init/001_schema.sql` | (đã có) bảng `raw`, `cleaned`, `etl_watermark`, continuous aggregate `agg_hourly` |
 
 ## 1. Chuẩn bị (làm một lần)
 
 ```bash
-git pull && git checkout feature/data-pipeline
+git pull
 cp .env.example .env                       # nếu chưa có
 docker compose up -d --build
 docker compose ps                          # timescaledb phải ở trạng thái healthy
@@ -36,26 +36,25 @@ docker compose exec timescaledb psql -U energy -d energy \
 ## 2. Chạy producer
 
 ```bash
-python producer/producer.py --speed 60 --start 2017-11-01          # demo dashboard: 15 phút dữ liệu = 15 giây
-python producer/producer.py --speed 10 --start "2018-01-04 16:45"   # demo Red Alert: 15 phút dữ liệu = 90 giây
+python producer/producer.py --speed 20 --event EV029               # demo: 15 phút dữ liệu = 45 giây
+python producer/producer.py --speed 60 --start 2017-11-01          # nhanh: 15 phút dữ liệu = 15 giây
 python producer/producer.py --speed 0  --start 2017-11-01 --days 1  # hết tốc độ, đúng 1 ngày (để kiểm tra)
 python producer/producer.py --speed 0                               # nạp cả 8 tháng (91.328 dòng)
 ```
 
 | Tham số | Ý nghĩa |
 |---|---|
-| `--speed` | `1`, `10`, `60`, `x60`... ; `0` = hết tốc độ. 15 phút dữ liệu = 900 / speed giây |
+| `--speed` | `1`, `20` (demo), `60`, `x60`... ; `0` = hết tốc độ. 15 phút dữ liệu = 900 / speed giây |
 | `--start` | Bắt đầu phát từ `YYYY-MM-DD` hoặc `"YYYY-MM-DD HH:MM"` (mặc định: đầu file) |
 | `--days N` / `--end` | Dừng sau N ngày / trước mốc `--end` |
 | `--event` | Phát lại một sự cố của `event_label.csv` (vd `EV029`): từ `t_start − 2 giờ` đến `t_end + 2 giờ` |
-| (dừng khi Đỏ) | Trước mỗi mốc `ts` đọc `replay_control.paused` của run LIVE; đang dừng thì chờ, kiểm tra mỗi 1 giây. Tốc độ > ×60 (hoặc 0) chỉ in cảnh báo |
 | `--dry-run` | Chỉ in kế hoạch phát, không ghi DB |
 | `--dsn` | Chuỗi kết nối (mặc định `postgresql://energy:energy@localhost:5433/energy`, hoặc biến `DATABASE_URL` / `POSTGRES_*`) |
 
-- Dừng bằng `Ctrl+C`: mốc đang ghi dở bị hủy, các mốc đã xong vẫn còn. Chạy lại là phát tiếp, **không trùng** nhờ `ON CONFLICT (station_id, ts) DO NOTHING`.
+- Dừng bằng `Ctrl+C`: mốc đang ghi dở bị hủy, các mốc đã xong vẫn còn. Chạy lại cùng khoảng sẽ **thêm dòng** vào `raw` (append-only); ELT chỉ giữ bản `ingested_at` mới nhất nên `cleaned` không trùng.
 - Mỗi mốc `ts` ghi đủ 4 trạm trong một transaction, nên ELT không bao giờ thấy mốc ghi dở.
-- Log: `[ts] đã phát X/Y mốc | gửi N dòng, ghi mới M, bỏ qua trùng K`; khi dừng: `TẠM DỪNG (...)` và `CHẠY TIẾP sau N giây dừng`.
-- Không bao giờ dừng giữa một mốc `ts`; thời gian dừng được cộng vào lịch phát nên sau khi chạy tiếp không phát dồn.
+- Log: `[ts] đã phát X/Y mốc | đã ghi N dòng`.
+- **Không dừng** khi có cảnh báo Đỏ: dữ liệu chạy liên tục như lưới thật; thời hạn xử lý tính theo giờ dữ liệu.
 
 ## 3. Kiểm tra nhanh
 
@@ -69,17 +68,17 @@ docker compose exec -T timescaledb psql -U energy -d energy -v day=2017-11-01 < 
 ```
 Cột `ket_qua` của cả 4 trạm phải là `PASS`.
 
-**b) Dừng rồi chạy lại: số dòng raw không tăng**
+**b) Chạy lại: raw tăng, cleaned không trùng**
 ```bash
 python producer/producer.py --speed 0 --start 2017-11-01 --days 1    # chạy lại lần 2
 docker compose exec -T timescaledb psql -U energy -d energy -v day=2017-11-01 < sql/check_pipeline.sql
 ```
-`raw_total` giữ nguyên (384), log ghi `ghi mới 0, bỏ qua trùng 384`.
+`raw_total` tăng lên 768 (append-only), `cleaned_total` vẫn 384, `ket_qua` vẫn `PASS`.
 
 ## 4. Lưu ý
 
 - Dữ liệu có `ts` năm 2017–2018, nên mọi tính toán theo **thời gian của dữ liệu**, không theo giờ máy. Policy làm mới của `agg_hourly` đã đặt `start_offset => NULL` trong `001_schema.sql`, và `materialized_only = false` nên giờ đang phát vẫn hiện ngay.
 - Dashboard hiển thị giờ dữ liệu nguyên trạng (không đổi múi giờ); giờ thật hiển thị theo `DISPLAY_TZ` (mặc định Asia/Ho_Chi_Minh).
-- `quality_flag` trong `cleaned` để mặc định `'OK'`; detector tự kiểm tra đứng yên / mất số liệu (Task Phát hiện).
-- Phát lại từ `--start` sớm hơn mốc đã xử lý chỉ bổ sung được dòng **chưa có trong raw**; dòng mới có `ts` ≤ mốc của trạm đó sẽ không được ELT xử lý. Muốn nạp lại từ đầu: `docker compose down -v`.
+- `cleaned` chỉ giữ `hufl`, `hull`, `ot`, `s_h`, `load_pct` (bỏ `quality_flag` và 4 cột tải trung/hạ áp); detector tự kiểm tra cảm biến đứng yên.
+- Watermark tính theo `ingested_at` của từng trạm và quét lùi 1 phút, nên bản phát lại / sửa muộn của một mốc cũ vẫn được ELT ghi đè vào `cleaned`. Detector không xử lý lại mốc đã qua. Muốn phát lại sạch: `sql/reset_replay.sql`.
 - Dừng job: `SELECT alter_job(<job_id>, scheduled => false);`

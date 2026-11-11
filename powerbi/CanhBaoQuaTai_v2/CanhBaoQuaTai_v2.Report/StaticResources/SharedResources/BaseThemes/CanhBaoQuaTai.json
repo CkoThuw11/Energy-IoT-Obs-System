@@ -1,0 +1,114 @@
+{
+  "name": "CanhBaoQuaTai",
+  "dataColors": [
+    "#1E5A85",
+    "#C98200",
+    "#2E7D4F",
+    "#C62828",
+    "#6B5BB8",
+    "#7C9CB8",
+    "#9AA6B2",
+    "#5A6774"
+  ],
+  "good": "#2E7D4F",
+  "neutral": "#C98200",
+  "bad": "#C62828",
+  "maximum": "#C62828",
+  "center": "#FFF3DA",
+  "minimum": "#FFFFFF",
+  "background": "#FFFFFF",
+  "backgroundLight": "#F3F5F7",
+  "backgroundNeutral": "#D6DCE3",
+  "foreground": "#16202B",
+  "foregroundNeutralSecondary": "#5A6774",
+  "tableAccent": "#1E5A85",
+  "textClasses": {
+    "title": {
+      "fontFace": "Segoe UI Semibold",
+      "fontSize": 11,
+      "color": "#16202B"
+    },
+    "callout": {
+      "fontFace": "Segoe UI Semibold",
+      "fontSize": 24,
+      "color": "#16202B"
+    },
+    "label": {
+      "fontFace": "Segoe UI",
+      "fontSize": 10,
+      "color": "#5A6774"
+    },
+    "header": {
+      "fontFace": "Segoe UI Semibold",
+      "fontSize": 12,
+      "color": "#16202B"
+    }
+  },
+  "visualStyles": {
+    "page": {
+      "*": {
+        "background": [
+          {
+            "color": {
+              "solid": {
+                "color": "#EEF1F4"
+              }
+            },
+            "transparency": 0
+          }
+        ]
+      }
+    },
+    "*": {
+      "*": {
+        "background": [
+          {
+            "show": true,
+            "color": {
+              "solid": {
+                "color": "#FFFFFF"
+              }
+            },
+            "transparency": 0
+          }
+        ],
+        "border": [
+          {
+            "show": true,
+            "color": {
+              "solid": {
+                "color": "#D6DCE3"
+              }
+            },
+            "radius": 6
+          }
+        ],
+        "title": [
+          {
+            "show": true,
+            "fontColor": {
+              "solid": {
+                "color": "#16202B"
+              }
+            },
+            "fontSize": 11
+          }
+        ]
+      }
+    },
+    "textbox": {
+      "*": {
+        "background": [
+          {
+            "show": false
+          }
+        ],
+        "border": [
+          {
+            "show": false
+          }
+        ]
+      }
+    }
+  }
+}

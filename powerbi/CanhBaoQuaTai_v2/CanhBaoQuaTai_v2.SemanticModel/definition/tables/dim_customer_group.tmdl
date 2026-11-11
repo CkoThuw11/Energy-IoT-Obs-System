@@ -1,0 +1,50 @@
+table dim_customer_group
+	lineageTag: 307aaf8c-0b1d-446a-ac7e-22721d34024a
+
+	column group_id
+		dataType: string
+		lineageTag: a34efb5f-0dae-46c6-9f2f-03e4c60fad3d
+		summarizeBy: none
+		sourceColumn: group_id
+
+	column station_id
+		dataType: string
+		lineageTag: 916ca1f4-d812-4107-99c6-7b2e0dbbb651
+		summarizeBy: none
+		sourceColumn: station_id
+
+	column group_name
+		dataType: string
+		lineageTag: f02cbd56-d9fa-4344-b2d6-c52ff35222d7
+		summarizeBy: none
+		sourceColumn: group_name
+
+	column customer_type
+		dataType: string
+		lineageTag: 09423236-0dd1-4f69-89ce-e38d1d3e7376
+		summarizeBy: none
+		sourceColumn: customer_type
+
+	column load_share_pct
+		dataType: double
+		formatString: #,0.##
+		lineageTag: b818a749-cbd4-4cee-a929-ac25ec7eb1c8
+		summarizeBy: none
+		sourceColumn: load_share_pct
+
+	column is_priority
+		dataType: int64
+		formatString: 0
+		lineageTag: 94e6ed91-974c-411a-84bd-34e70ae5975e
+		summarizeBy: none
+		sourceColumn: is_priority
+
+	partition dim_customer_group = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbHist ),
+				    Source = Db{[Schema = "gold", Item = "dim_customer_group"]}[Data],
+				    Typed = Table.TransformColumnTypes ( Source, {{"group_id", type text}, {"station_id", type text}, {"group_name", type text}, {"customer_type", type text}, {"load_share_pct", type number}, {"is_priority", Int64.Type}}, "en-US" )
+				in
+				    Typed

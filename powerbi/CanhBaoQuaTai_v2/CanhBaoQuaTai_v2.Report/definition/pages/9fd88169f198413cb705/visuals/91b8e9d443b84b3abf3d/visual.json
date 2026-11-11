@@ -1,0 +1,165 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "91b8e9d443b84b3abf3d",
+  "position": {
+    "x": 16,
+    "y": 410,
+    "z": 7000,
+    "height": 302,
+    "width": 1248,
+    "tabOrder": 7000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "event_id"
+                }
+              },
+              "queryRef": "fact_sensor_fault.event_id",
+              "nativeQueryRef": "event_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "station_id"
+                }
+              },
+              "queryRef": "fact_sensor_fault.station_id",
+              "nativeQueryRef": "station_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "detail"
+                }
+              },
+              "queryRef": "fact_sensor_fault.detail",
+              "nativeQueryRef": "detail"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "t_start"
+                }
+              },
+              "queryRef": "fact_sensor_fault.t_start",
+              "nativeQueryRef": "t_start"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "t_end"
+                }
+              },
+              "queryRef": "fact_sensor_fault.t_end",
+              "nativeQueryRef": "t_end"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "duration_hours"
+                }
+              },
+              "queryRef": "fact_sensor_fault.duration_hours",
+              "nativeQueryRef": "duration_hours"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "is_detected"
+                }
+              },
+              "queryRef": "fact_sensor_fault.is_detected",
+              "nativeQueryRef": "is_detected"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_sensor_fault"
+                    }
+                  },
+                  "Property": "detect_delay_min"
+                }
+              },
+              "queryRef": "fact_sensor_fault.detect_delay_min",
+              "nativeQueryRef": "detect_delay_min"
+            }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Danh sách lỗi cảm biến'"
+                }
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "11D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

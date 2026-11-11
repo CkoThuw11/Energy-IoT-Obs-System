@@ -7,7 +7,7 @@ Kho chia thành 4 lớp. Mọi bảng nối với `dim_substation` qua khóa `st
 |---|---|---|
 | Tham chiếu | `dim_substation`, `dim_customer_group`, `param_threshold` | Mô tả trạm, khách hàng, định mức và ngưỡng |
 | Cảm biến | `raw` → `cleaned` → `agg_hourly`, `etl_watermark` | Số liệu đo 15 phút, đã làm sạch và tổng hợp theo giờ |
-| Cảnh báo | `fact_alert`, `fact_alert_action`, `replay_control` | Cảnh báo và vòng đời; biện pháp người trực chọn; trạng thái dừng phát lại |
+| Cảnh báo | `fact_alert`, `fact_alert_action` | Cảnh báo và vòng đời; biện pháp người trực chọn (chuyển tải, lý do trả tải). Dữ liệu không dừng khi lên Đỏ (v2: bỏ `replay_control`) |
 | Đánh giá | `eval.event_label` | Đáp án sự cố, schema riêng, detector không đọc |
 
 Phần 6 gộp các lớp trên thành star schema.
@@ -76,8 +76,8 @@ erDiagram
         text station_id PK
     }
     raw {
-        timestamp ts PK
-        text station_id PK, FK
+        timestamp ts "append-only, không PK"
+        text station_id FK
         float hufl
         float hull
         float mufl
@@ -90,11 +90,12 @@ erDiagram
     cleaned {
         timestamp ts PK
         text station_id PK, FK
-        float hufl_to_lull "6 cột tải như raw"
+        float hufl
+        float hull
         float ot
         float s_h
         float load_pct
-        text quality_flag
+        timestamptz ingested_at "của bản raw được chọn"
         timestamptz processed_at
     }
     agg_hourly {
@@ -109,12 +110,12 @@ erDiagram
     etl_watermark {
         text job_name PK
         text station_id PK, FK
-        timestamp last_ts
+        timestamptz last_ingested_at
         timestamptz updated_at
     }
 
     dim_substation ||--o{ raw : "đo tại"
-    raw ||--|| cleaned : "ELT"
+    raw }o--|| cleaned : "ELT: bản ingested_at mới nhất"
     dim_substation ||--o{ cleaned : "đo tại"
     cleaned ||--o{ agg_hourly : "tổng hợp theo giờ"
     dim_substation ||--o{ etl_watermark : "mốc đã xử lý"
@@ -122,10 +123,10 @@ erDiagram
 
 | Bảng | Loại | Grain | Khóa | Người ghi |
 |---|---|---|---|---|
-| raw | Hypertable | 1 trạm × 15 phút | (station_id, ts) | Producer |
-| cleaned | Hypertable | 1 trạm × 15 phút | (station_id, ts) | Job ELT |
+| raw | Hypertable | 1 lần nhận dữ liệu (có thể nhiều dòng / trạm × 15 phút) | không khóa (append-only) | Producer (chỉ INSERT) |
+| cleaned | Hypertable | 1 trạm × 15 phút | (station_id, ts) | Job ELT (`ON CONFLICT DO UPDATE` khi bản mới hơn) |
 | agg_hourly | Continuous aggregate | 1 trạm × 1 giờ | (bucket, station_id) | TimescaleDB, refresh mỗi phút |
-| etl_watermark | Bảng thường | 1 job × 1 trạm | (job_name, station_id) | Job ELT |
+| etl_watermark | Bảng thường | 1 job × 1 trạm | (job_name, station_id) | Job ELT (mốc `ingested_at`, quét lùi 1 phút) |
 
 - `s_h = √(hufl² + hull²)`; `load_pct = s_h / rated_load × 100`.
 - `raw` và `cleaned` **không có cột nhãn nguồn**, nên detector không thể nhìn đáp án.
@@ -155,6 +156,8 @@ erDiagram
         timestamp escalated_ts
         timestamp last_ts
         timestamp resolved_ts
+        timestamp acked_ts "mốc dữ liệu lúc Theo dõi / xử lý"
+        timestamp action_ts "mốc dữ liệu lúc chuyển tải"
         timestamptz opened_at
         timestamptz acked_at
         text acked_by
@@ -168,6 +171,7 @@ erDiagram
         float ttb_min
         float speed_pct_h
         smallint below_close_count
+        float received_load "tải đang nhận về khi mở"
         timestamptz updated_at
     }
     fact_alert_action {
@@ -178,22 +182,15 @@ erDiagram
         text target_station FK "chỉ TRANSFER"
         timestamp effective_from_ts "mốc dữ liệu lúc chuyển"
         timestamp effective_to_ts "mốc trả tải, NULL = hiệu lực"
+        text return_reason "SAFE / TIMEOUT"
         text done_by
         timestamptz done_at
-    }
-    replay_control {
-        text run_id PK
-        boolean paused
-        timestamp paused_at_ts
-        text reason "alert_id gây dừng"
-        timestamptz updated_at
     }
 
     dim_substation ||--o{ fact_alert : "cảnh báo"
     dim_substation ||--|| param_threshold : "ngưỡng dùng để phát hiện"
     fact_alert ||--o{ fact_alert_action : "biện pháp giảm tải"
     dim_substation |o--o{ fact_alert_action : "trạm nhận chuyển tải"
-    fact_alert |o..o{ replay_control : "reason (logic, không FK)"
 ```
 
 | Thuộc tính | Giá trị |
@@ -201,23 +198,22 @@ erDiagram
 | Loại fact | Accumulating snapshot (1 dòng được cập nhật suốt vòng đời) |
 | Grain | 1 cảnh báo |
 | Measure | `load_pct`, `peak_load_pct`, `ttb_min`, `speed_pct_h` |
-| Mốc dữ liệu | `opened_ts` → `escalated_ts` (lên Đỏ) → `resolved_ts` |
+| Mốc dữ liệu | `opened_ts` → `escalated_ts` (lên Đỏ) → `acked_ts` / `action_ts` → `resolved_ts` |
 | Mốc giờ thật | `opened_at` → `acked_at` → `verified_at` → `action_done_at` → `resolved_at` |
-| Người ghi | Detector (mở, cập nhật, đóng); Streamlit (ACK, xác minh, hành động, nguyên nhân, báo giả) |
+| Người ghi | Detector (mở, cập nhật, đóng, trả tải); Streamlit (Theo dõi, chuyển tải, báo giả, nguyên nhân) |
 
-- **Vòng đời:** OPEN → ACK → ACTION_TAKEN → RESOLVED, khớp quy trình 3 bước Xác nhận → Chuyển tải → Theo dõi.
-  - ① Xác nhận: `status = ACK`, `acked_by`, `acked_at`, `verdict = REAL`, `verified_at`; hoặc báo giả (xem dưới).
-  - ② Chuyển tải: mỗi lần chuyển là 1 dòng `fact_alert_action` (TRANSFER, `amount`, `target_station`, `effective_from_ts`); lần đầu đặt `status = ACTION_TAKEN`, `action_done_at`.
-  - ③ Theo dõi: `root_cause`. Detector đóng cảnh báo khi tải **sau chuyển tải** (`v_load_sim`) < 85% hai lần liên tiếp, và đặt `effective_to_ts` (trả tải) khi tải **đo** của trạm nguồn < 85% hai lần liên tiếp.
-- **Báo giả:** `verdict = FALSE_ALARM`, `status = RESOLVED`, `resolved_ts = last_ts`. Chỉ dùng cho KPI vận hành; Recall/Precision vẫn chấm bằng `event_label`.
-- **Bị bỏ lỡ:** cảnh báo Đỏ RESOLVED mà `acked_at` rỗng.
+- **Vòng đời:** OPEN → ACK (Vàng: "Theo dõi") → ACTION_TAKEN (Đỏ: chuyển tải) → RESOLVED.
+  - Vàng – Theo dõi: `status = ACK`, `acked_by`, `acked_at`, `acked_ts`. Thời hạn: `acked_ts − opened_ts` ≤ 60 phút dữ liệu.
+  - Đỏ – Xác nhận chuyển tải: 1 dòng `fact_alert_action` (TRANSFER, `amount`, `target_station`, `effective_from_ts`); `verdict = REAL`, `verified_at`, `acked_*` (nếu chưa có), `action_done_at`, `action_ts`, `status = ACTION_TAKEN`. Thời hạn: `action_ts − escalated_ts` ≤ 30 phút dữ liệu.
+  - Detector đóng cảnh báo khi tải **sau chuyển tải** (`v_load_sim`) < 85% hai lần; trả tải theo tải **đo** của trạm nguồn: `SAFE` (< 85% hai lần) hoặc `TIMEOUT` (đã ≥ 2 giờ và < 90%).
+- **Báo giả:** `verdict = FALSE_ALARM`, `status = RESOLVED`, `resolved_ts = last_ts`.
+- **Bị bỏ lỡ:** cảnh báo Đỏ RESOLVED, `action_ts` rỗng, không phải báo giả. **Trễ:** `action_ts − escalated_ts` > 30 phút.
 - Detector vẫn cập nhật số đo (`load_pct`, `ttb_min`, `peak_load_pct`, `last_ts`) của cảnh báo ACK / ACTION_TAKEN và đóng như bình thường, nhưng không ghi đè cột người trực nhập.
-- **`run_id`:** LIVE (vận hành / phát lại, dashboard), EVAL_A, EVAL_B (đánh giá phương pháp). Không có bảng `eval_alert` riêng.
+- **`run_id`:** LIVE (phát lại có người trực, DB `energy`), HISTORY (detector chạy một lượt 8 tháng, DB `energy_history`).
 
 | Bảng | Grain | Người ghi | Ghi chú |
 |---|---|---|---|
 | fact_alert_action | 1 lần chuyển tải của 1 cảnh báo | Streamlit (detector đặt `effective_to_ts`) | Hiện chỉ dùng TRANSFER; `amount > 0`; `target_station` bắt buộc với TRANSFER; hiệu lực cho các mốc `ts ∈ (effective_from_ts, effective_to_ts]`; `done_at = now()` |
-| replay_control | 1 run (LIVE) | Detector bật, Streamlit tắt | Detector UPSERT `paused = true`, `paused_at_ts = ts`, `reason = alert_id` khi một cảnh báo chuyển sang Đỏ (run LIVE). Không hiển thị trên dashboard. Producer đọc `paused` trước mỗi mốc `ts`. EVAL_A/EVAL_B không ghi |
 
 ---
 
@@ -235,7 +231,7 @@ erDiagram
         timestamp t_start
         timestamp t_breach "chỉ OVERLOAD"
         timestamp t_end
-        text source_type "REAL / SIMULATED"
+        text source_type "REAL"
         text detail
     }
     fact_alert {
@@ -255,11 +251,11 @@ erDiagram
 |---|---|
 | Bảng | `eval.event_label` (schema `eval`) |
 | Grain | 1 sự cố |
-| Nội dung | 38 sự cố: 9 OVERLOAD SIMULATED, 9 OVERLOAD REAL (Trạm Y), 20 SENSOR REAL |
-| `detail` | INJECTED_RAMP, REAL_PEAK, DAY31_FILL, STUCK_HV |
+| Nội dung | 29 sự cố thật: 9 OVERLOAD REAL (đều ở Trạm Y), 20 SENSOR REAL. Không còn sự cố bơm |
+| `detail` | REAL_PEAK, DAY31_FILL, STUCK_HV |
 | Nguồn | `event_label.csv` (Task 1.3) |
 
-- **Quan hệ khớp với `fact_alert` là logic, không có khóa ngoại.** Một cảnh báo khớp một sự cố khi cùng `station_id`, cùng loại, và `opened_ts` ∈ [`t_start`, `t_end` + 1 giờ]. Nhiều cảnh báo cho cùng một sự cố chỉ tính 1 lần.
+- **Quan hệ khớp với `fact_alert` là logic, không có khóa ngoại.** Một cảnh báo khớp một sự cố khi cùng `station_id`, cùng loại, và cảnh báo **đang mở** tại một thời điểm trong [`t_start`, `t_end` + 1 giờ]. Nhiều cảnh báo cho cùng một sự cố chỉ tính 1 lần.
 - **Chỉ số đánh giá:**
   - Độ trễ phát hiện = `opened_ts` − `t_start`.
   - Lead time = `t_breach` − `escalated_ts`.
@@ -332,7 +328,9 @@ erDiagram
 |---|---|
 | v_load_sim | Mỗi run × trạm × `ts`: số đo `s_h`, `load_pct` và tải sau chuyển tải (mô phỏng) `s_h_sim`, `load_pct_sim`, `transfer_out`, `transfer_in` |
 | v_station_latest | Bản ghi mới nhất mỗi trạm × `run_id`: `ts`, `s_h`, `load_pct`, `s_h_sim`, `load_pct_sim`, `rated_load`, `ot`, `speed_pct_h` (trên tải mô phỏng); `load_level` theo **cảnh báo đang mở** của run đó (RED > YELLOW > SENSOR > NORMAL), không theo ngưỡng %; `ttb_min` của cảnh báo OVERLOAD đang mở |
-| v_alert_queue | Xếp: đang mở trước → `severity_rank` (RED 1, YELLOW 2, SENSOR 3) → `floor(coalesce(ttb_min, 9999) / 10)` → `has_priority_customer` → `load_pct` cao. Cờ `has_priority_customer`, `is_escalated` (Đỏ OPEN > 3 phút, Vàng OPEN > 15 phút), `is_missed` (Đỏ RESOLVED chưa ACK), `response_sec` |
+| v_data_clock | Mốc dữ liệu mới nhất mỗi trạm (đồng hồ của mọi thời hạn) |
+| v_alert_queue | Xếp: đang mở trước → `severity_rank` (RED 1, YELLOW 2, SENSOR 3) → `floor(coalesce(ttb_min, 9999) / 10)` → `has_priority_customer` → `load_pct` cao. Thời hạn theo giờ dữ liệu: `clock_start_ts` (Đỏ = lên Đỏ, Vàng = mở), `handled_ts` (Đỏ = `action_ts`, Vàng = `acked_ts`), `deadline_min` (30 / 60), `data_wait_min`, `is_overdue`, `is_missed` (Đỏ đóng, không chuyển tải, không báo giả), `is_late` (chuyển tải > 30′) |
+| v_transfer_status | Mỗi lần chuyển tải: `active_min` (giờ dữ liệu), `is_overdue` (còn hiệu lực ≥ 2 giờ) |
 
 ---
 
@@ -341,16 +339,17 @@ erDiagram
 | Quy ước | Ý nghĩa |
 |---|---|
 | `station_id` | TRAM_Y, TRAM_2, TRAM_3, TRAM_4 |
-| `*_ts` (TIMESTAMP) | Thời gian dữ liệu (2017–2018); dùng cho phát hiện và đánh giá |
-| `*_at` (TIMESTAMPTZ) | Giờ thật (`now()`); dùng đo độ trễ và thời gian phản ứng |
+| `*_ts` (TIMESTAMP) | Thời gian dữ liệu (2017–2018); dùng cho phát hiện, thời hạn xử lý và đánh giá |
+| `*_at` (TIMESTAMPTZ) | Giờ thật (`now()`); chỉ để tham khảo (độ trễ hệ thống) |
 | `data_origin` | Trong `dim_substation`. REAL = ETT gốc; DERIVED = dời ngày |
-| `source_type` | Chỉ có trong `eval.event_label`. REAL = có sẵn trong dữ liệu gốc; SIMULATED = nhóm bơm vào |
+| `source_type` | Chỉ có trong `eval.event_label`. Hiện mọi sự cố là REAL (có sẵn trong dữ liệu gốc) |
 
 ## 8. Ràng buộc quan trọng
 - **Chống trùng:** `ux_alert_one_open (run_id, station_id, alert_type) WHERE status IN ('OPEN','ACK','ACTION_TAKEN')`.
 - **Loại khớp mức:** SENSOR ↔ severity SENSOR; OVERLOAD ↔ RED / YELLOW.
 - **ACK hợp lệ:** status ACK bắt buộc có `acked_at` và `acked_by`.
-- **Đã xử lý hợp lệ:** status ACTION_TAKEN bắt buộc có `action_done_at`.
+- **Đã xử lý hợp lệ:** status ACTION_TAKEN bắt buộc có `action_done_at` và `action_ts`.
+- **Trả tải hợp lệ:** `return_reason` có giá trị khi và chỉ khi `effective_to_ts` có giá trị.
 - **Xác minh hợp lệ:** có `verdict` (REAL / FALSE_ALARM) thì bắt buộc có `verified_at`.
 - **Chuyển tải:** `amount > 0`; TRANSFER ⇔ có `target_station`; TRANSFER bắt buộc có `effective_from_ts`; `effective_to_ts > effective_from_ts`.
 - **Đóng hợp lệ:** status RESOLVED ⇔ có `resolved_ts`.

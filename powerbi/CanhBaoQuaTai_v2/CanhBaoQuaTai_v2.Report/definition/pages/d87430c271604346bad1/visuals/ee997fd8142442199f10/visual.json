@@ -1,0 +1,165 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "ee997fd8142442199f10",
+  "position": {
+    "x": 16,
+    "y": 410,
+    "z": 8000,
+    "height": 302,
+    "width": 820,
+    "tabOrder": 8000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "event_id"
+                }
+              },
+              "queryRef": "fact_overload_episode.event_id",
+              "nativeQueryRef": "event_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "station_id"
+                }
+              },
+              "queryRef": "fact_overload_episode.station_id",
+              "nativeQueryRef": "station_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "t_start"
+                }
+              },
+              "queryRef": "fact_overload_episode.t_start",
+              "nativeQueryRef": "t_start"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "t_breach"
+                }
+              },
+              "queryRef": "fact_overload_episode.t_breach",
+              "nativeQueryRef": "t_breach"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "t_end"
+                }
+              },
+              "queryRef": "fact_overload_episode.t_end",
+              "nativeQueryRef": "t_end"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "duration_min"
+                }
+              },
+              "queryRef": "fact_overload_episode.duration_min",
+              "nativeQueryRef": "duration_min"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "peak_load_pct"
+                }
+              },
+              "queryRef": "fact_overload_episode.peak_load_pct",
+              "nativeQueryRef": "peak_load_pct"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_overload_episode"
+                    }
+                  },
+                  "Property": "minutes_ge100"
+                }
+              },
+              "queryRef": "fact_overload_episode.minutes_ge100",
+              "nativeQueryRef": "minutes_ge100"
+            }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Các đợt quá tải thật: kéo dài bao lâu, đỉnh bao nhiêu %'"
+                }
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "11D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

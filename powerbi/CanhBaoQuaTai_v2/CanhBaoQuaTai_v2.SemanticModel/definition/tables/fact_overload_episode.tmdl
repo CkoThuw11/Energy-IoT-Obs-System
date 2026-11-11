@@ -1,0 +1,100 @@
+table fact_overload_episode
+	lineageTag: f4b5189a-691f-42f2-9812-9c78a8a5ce45
+
+	column event_id
+		dataType: string
+		lineageTag: d74ea2ae-8c8a-4919-8371-f57fe6c0a13d
+		summarizeBy: none
+		sourceColumn: event_id
+
+	column station_id
+		dataType: string
+		lineageTag: eb0b9333-d421-4330-98fd-c72b6cff64b0
+		summarizeBy: none
+		sourceColumn: station_id
+
+	column detail
+		dataType: string
+		lineageTag: bd61ddea-9d60-4d89-a324-cac3efe4eb5d
+		summarizeBy: none
+		sourceColumn: detail
+
+	column t_start
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 9e0d5567-1ced-4b5e-a28f-516c4237a319
+		summarizeBy: none
+		sourceColumn: t_start
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column t_breach
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: f4f0a6c8-f115-409d-8d21-71f813213c38
+		summarizeBy: none
+		sourceColumn: t_breach
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column t_end
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 6dd0177a-4020-4607-8ae6-95fe781f977d
+		summarizeBy: none
+		sourceColumn: t_end
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column date
+		dataType: dateTime
+		formatString: dd/mm/yyyy
+		lineageTag: 601e1b25-5623-4d16-8389-5cea690dcfce
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column year_month
+		dataType: string
+		lineageTag: d9ccebcf-fba6-4b5b-a5e6-7745f1e0550e
+		summarizeBy: none
+		sourceColumn: year_month
+
+	column duration_min
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 940f1fd4-1129-404f-8ef8-a581827ce148
+		summarizeBy: none
+		sourceColumn: duration_min
+
+	column peak_load_pct
+		dataType: double
+		formatString: #,0.##
+		lineageTag: a2967c68-414b-48ae-b739-65e2252bc6ce
+		summarizeBy: none
+		sourceColumn: peak_load_pct
+
+	column minutes_ge100
+		dataType: int64
+		formatString: 0
+		lineageTag: 1e3a99b8-30c8-47e7-9606-fa23fc6913c9
+		summarizeBy: none
+		sourceColumn: minutes_ge100
+
+	column minutes_ge90
+		dataType: int64
+		formatString: 0
+		lineageTag: 399f0f44-53a0-4f54-88d7-da51d3f73860
+		summarizeBy: none
+		sourceColumn: minutes_ge90
+
+	partition fact_overload_episode = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbHist ),
+				    Source = Db{[Schema = "gold", Item = "fact_overload_episode"]}[Data],
+				    Typed = Table.TransformColumnTypes ( Source, {{"event_id", type text}, {"station_id", type text}, {"detail", type text}, {"t_start", type datetime}, {"t_breach", type datetime}, {"t_end", type datetime}, {"date", type date}, {"year_month", type text}, {"duration_min", type number}, {"peak_load_pct", type number}, {"minutes_ge100", Int64.Type}, {"minutes_ge90", Int64.Type}}, "en-US" )
+				in
+				    Typed

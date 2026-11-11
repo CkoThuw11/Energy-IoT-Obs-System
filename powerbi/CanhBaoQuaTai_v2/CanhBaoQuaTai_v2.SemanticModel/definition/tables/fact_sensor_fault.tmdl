@@ -1,0 +1,113 @@
+table fact_sensor_fault
+	lineageTag: 154e86aa-a652-4003-8ce5-ea6f475aaae2
+
+	column event_id
+		dataType: string
+		lineageTag: 4c49db63-0bae-4c2f-9955-adaa75588a8e
+		summarizeBy: none
+		sourceColumn: event_id
+
+	column station_id
+		dataType: string
+		lineageTag: d858f02d-1f70-4a54-b2ae-193ec8bd249d
+		summarizeBy: none
+		sourceColumn: station_id
+
+	column detail
+		dataType: string
+		lineageTag: c3620682-9195-4fc5-a814-e9bb2e4436cc
+		summarizeBy: none
+		sourceColumn: detail
+
+	column t_start
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 69622042-4e47-4dc7-9d68-394cf2905a5f
+		summarizeBy: none
+		sourceColumn: t_start
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column t_end
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 162d6f27-edb6-4410-9603-9fbf7a3a9adc
+		summarizeBy: none
+		sourceColumn: t_end
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column date
+		dataType: dateTime
+		formatString: dd/mm/yyyy
+		lineageTag: 44ec4a76-522e-4f19-899d-b4db9d6a3a0f
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column year_month
+		dataType: string
+		lineageTag: 1ef3bd8b-164e-49e7-bb7b-18e870059896
+		summarizeBy: none
+		sourceColumn: year_month
+
+	column start_day_of_month
+		dataType: int64
+		formatString: 0
+		lineageTag: 1a4a0319-57dd-47a9-a35a-533f456535ae
+		summarizeBy: none
+		sourceColumn: start_day_of_month
+
+	column start_hour
+		dataType: int64
+		formatString: 0
+		lineageTag: 3f5bd4c5-c153-4633-87f3-5035c3c5fb16
+		summarizeBy: none
+		sourceColumn: start_hour
+
+	column duration_hours
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 0227a826-b6be-422e-9ef1-30058f116e90
+		summarizeBy: none
+		sourceColumn: duration_hours
+
+	column first_open_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: c89e738b-57ac-42dc-8fc9-dc98e162f329
+		summarizeBy: none
+		sourceColumn: first_open_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column is_detected
+		dataType: int64
+		formatString: 0
+		lineageTag: fe4a2718-0d94-4680-b5c1-8020924d7572
+		summarizeBy: none
+		sourceColumn: is_detected
+
+	column detect_delay_min
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 95778b44-e74a-44a0-9dae-1c4fdaad43c7
+		summarizeBy: none
+		sourceColumn: detect_delay_min
+
+	column run_id
+		dataType: string
+		lineageTag: a40b6657-7489-4be4-bcc1-b202d0dcc775
+		summarizeBy: none
+		sourceColumn: run_id
+
+	partition fact_sensor_fault = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbHist ),
+				    Source = Db{[Schema = "gold", Item = "fact_sensor_fault"]}[Data],
+				    Typed = Table.TransformColumnTypes ( Source, {{"event_id", type text}, {"station_id", type text}, {"detail", type text}, {"t_start", type datetime}, {"t_end", type datetime}, {"date", type date}, {"year_month", type text}, {"start_day_of_month", Int64.Type}, {"start_hour", Int64.Type}, {"duration_hours", type number}, {"first_open_ts", type datetime}, {"is_detected", Int64.Type}, {"detect_delay_min", type number}, {"run_id", type text}}, "en-US" )
+				in
+				    Typed

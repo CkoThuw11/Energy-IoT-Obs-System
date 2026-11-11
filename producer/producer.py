@@ -4,21 +4,20 @@ producer.py - Phát lại scenario_data.csv vào bảng raw như cảm biến g�
 
 - Đọc CSV, phát theo thứ tự ts. Mỗi mốc ts ghi đủ các trạm trong MỘT transaction,
   nên thủ tục ELT không bao giờ thấy một mốc ghi dở.
-- Chạy lại không trùng: INSERT ... ON CONFLICT (station_id, ts) DO NOTHING.
+- raw là APPEND-ONLY (sped.md §3): chỉ INSERT, mỗi dòng mang ingested_at = giờ ghi. Phát lại cùng mốc
+  sẽ thêm dòng mới; thủ tục ELT giữ bản ingested_at mới nhất khi ghi vào cleaned.
 - --speed: hệ số tăng tốc so với thời gian của dữ liệu (15 phút dữ liệu = 900 giây thật / speed).
-    x1 = đúng thời gian thật, x10 = 90 giây / mốc, x60 = 15 giây / mốc, 0 = chạy hết tốc độ.
+    x1 = đúng thời gian thật, x20 = 45 giây / mốc (tốc độ demo), x60 = 15 giây / mốc, 0 = hết tốc độ.
 - --start: bắt đầu phát từ ngày/giờ này (mặc định: dòng đầu tiên của CSV).
 - --days / --end: dừng sau N ngày / trước mốc --end (để phát đúng 1 ngày khi kiểm tra).
 - --event EVxxx: phát lại đúng một sự cố trong data/event_label.csv, từ t_start − 2 giờ đến
   t_end + 2 giờ (chỉ dùng t_start / t_end để chọn khoảng; detector không đọc đáp án).
-- Trước MỖI mốc ts, đọc replay_control.paused của run LIVE; đang dừng (detector bật khi có
-  cảnh báo Đỏ) thì chờ, kiểm tra lại mỗi 1 giây. Không bao giờ dừng giữa một mốc ts.
-  Thời gian dừng được cộng vào lịch phát.
+- KHÔNG dừng khi có cảnh báo Đỏ: dữ liệu luôn chạy tiếp như lưới điện thật (sped.md §4).
 
 Ví dụ:
     python producer/producer.py --speed 60 --start 2017-11-01
     python producer/producer.py --speed 0 --start 2017-11-01 --days 1
-    python producer/producer.py --event EV029 --speed 60
+    python producer/producer.py --event EV029 --speed 20
 """
 import argparse
 import csv
@@ -27,23 +26,15 @@ import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 INTERVAL_SEC = 15 * 60  # chu kỳ lấy mẫu của dữ liệu: 15 phút
-
-PAUSE_POLL_SEC = 1.0
-MAX_SAFE_SPEED = 60      # nhanh hơn (15 giây / mốc) thì detector có thể dừng trễ hơn 1 bản ghi
-RUN_IDS = ("LIVE",)
 EVENT_MARGIN = timedelta(hours=2)
-
-PAUSED_SQL = "SELECT paused, paused_at_ts, reason FROM replay_control WHERE run_id = %s"
 
 COLUMNS = ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL", "OT"]
 
 INSERT_SQL = (
     "INSERT INTO raw (ts, station_id, hufl, hull, mufl, mull, lufl, lull, ot) "
-    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
-    "ON CONFLICT (station_id, ts) DO NOTHING"
+    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
 )
 
 
@@ -94,8 +85,6 @@ def build_parser() -> argparse.ArgumentParser:
     group = p.add_mutually_exclusive_group()
     group.add_argument("--days", type=float, default=None, help="chỉ phát N ngày kể từ --start")
     group.add_argument("--end", type=parse_dt, default=None, help="dừng trước mốc này (không gồm mốc này)")
-    p.add_argument("--run-id", choices=RUN_IDS, default="LIVE",
-                   help="run đọc replay_control để tự dừng khi có Đỏ (mặc định LIVE)")
     p.add_argument("--dsn", default=None, help="chuỗi kết nối DB (mặc định: biến môi trường / localhost:5433)")
     p.add_argument("--log-every", type=int, default=None,
                    help="in log sau mỗi N mốc ts (mặc định: tự chọn theo tốc độ)")
@@ -137,31 +126,6 @@ def event_window(path: Path, event_id: str) -> tuple[datetime, datetime]:
     sys.exit(f"Không thấy sự cố {event_id} trong {path}")
 
 
-def read_pause(cur: Any, run_id: str) -> tuple | None:
-    """(paused_at_ts, reason) nếu run đang dừng, ngược lại None."""
-    cur.execute(PAUSED_SQL, (run_id,))
-    row = cur.fetchone()
-    return (row[1], row[2]) if row and row[0] else None
-
-
-def wait_while_paused(conn: Any, cur: Any, run_id: str, next_ts: datetime) -> float:
-    """Chờ đến khi replay_control.paused = false. Trả về số giây đã chờ."""
-    pause = read_pause(cur, run_id)  # READ COMMITTED: luôn thấy giá trị mới nhất, không cần commit
-    if pause is None:
-        return 0.0
-    conn.commit()  # đẩy các mốc đã ghi trước khi chờ
-    started = time.monotonic()
-    print(f"[{next_ts}] TẠM DỪNG ({run_id}): cảnh báo Đỏ alert_id={pause[1]} lúc dữ liệu {pause[0]}. "
-          f"Chờ người trực xử lý trên dashboard...", flush=True)
-    while pause is not None:
-        time.sleep(PAUSE_POLL_SEC)
-        pause = read_pause(cur, run_id)
-        conn.commit()
-    waited = time.monotonic() - started
-    print(f"[{next_ts}] CHẠY TIẾP sau {waited:.0f} giây dừng.", flush=True)
-    return waited
-
-
 def main() -> int:
     args = build_parser().parse_args()
 
@@ -191,9 +155,6 @@ def main() -> int:
     print(f"Phát {len(batches)} mốc ts / {total_rows} dòng, từ {first_ts} đến {last_ts}; "
           f"speed={'max' if args.speed == 0 else 'x' + format(args.speed, 'g')} "
           f"({wait_per_ts:.1f} giây / mốc 15 phút)", flush=True)
-    if args.speed == 0 or args.speed > MAX_SAFE_SPEED:
-        print(f"CẢNH BÁO: nên chạy với --speed ≤ {MAX_SAFE_SPEED}; nhanh hơn thì producer có thể "
-              f"dừng trễ hơn 1 bản ghi so với lúc lên Đỏ. Vẫn tiếp tục.", flush=True)
     if args.dry_run:
         print("--dry-run: không ghi DB.")
         return 0
@@ -215,7 +176,7 @@ def main() -> int:
     else:
         log_every = 1 if (args.speed > 0 and wait_per_ts >= 1.0) else 96
 
-    sent = inserted = 0
+    sent = 0
     t0 = started = time.monotonic()
     done_ts = 0
     pending = 0
@@ -228,16 +189,9 @@ def main() -> int:
                 delay = target - time.monotonic()
                 if delay > 0:
                     time.sleep(delay)
-            # kiểm tra dừng trước MỖI mốc ts; thời gian dừng đẩy lùi cả lịch phát
-            waited = wait_while_paused(conn, cur, args.run_id, ts)
-            if waited:
-                t0 += waited
-                pending = 0
             for station_id, values in rows:
                 cur.execute(INSERT_SQL, (ts, station_id, *values))
                 sent += 1
-                if cur.rowcount and cur.rowcount > 0:
-                    inserted += cur.rowcount
             pending += 1
             done_ts += 1
             if pending >= commit_every:
@@ -246,19 +200,17 @@ def main() -> int:
             if done_ts % log_every == 0 or i == len(batches) - 1:
                 conn.commit()
                 pending = 0
-                print(f"[{ts}] đã phát {done_ts}/{len(batches)} mốc | gửi {sent} dòng, "
-                      f"ghi mới {inserted}, bỏ qua trùng {sent - inserted}", flush=True)
+                print(f"[{ts}] đã phát {done_ts}/{len(batches)} mốc | đã ghi {sent} dòng", flush=True)
         conn.commit()
     except KeyboardInterrupt:
         conn.rollback()  # mốc đang ghi dở bị hủy; các mốc đã commit vẫn còn
         print(f"\nĐã dừng. Phát tới ts={batches[max(done_ts - 1, 0)][0]} "
-              f"({sent} dòng gửi, {inserted} dòng mới). Chạy lại với --start để phát tiếp.")
+              f"({sent} dòng). Chạy lại với --start để phát tiếp.")
         return 130
     finally:
         conn.close()
 
-    print(f"Xong: {done_ts} mốc ts, gửi {sent} dòng, ghi mới {inserted}, bỏ qua trùng {sent - inserted}, "
-          f"mất {time.monotonic() - started:.1f} giây.")
+    print(f"Xong: {done_ts} mốc ts, ghi {sent} dòng, mất {time.monotonic() - started:.1f} giây.")
     return 0
 
 

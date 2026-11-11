@@ -1,6 +1,7 @@
-"""Kết nối DB và mọi thao tác đọc/ghi của dashboard.
+"""Kết nối DB và mọi thao tác đọc/ghi của dashboard (v2, sped.md §4).
 
 Mọi mốc giờ thật ghi bằng now() phía DB; dashboard không gửi giờ máy.
+Mốc DỮ LIỆU của thao tác (acked_ts, action_ts, effective_from_ts) = mốc dữ liệu mới nhất của trạm lúc bấm.
 Dashboard chỉ làm việc với run LIVE.
 """
 
@@ -19,7 +20,7 @@ RUN_ID = "LIVE"
 
 
 class StaleAlert(Exception):
-    """Lệnh đầu của transaction không đổi dòng nào (cảnh báo đã bị xử lý / đóng): rollback."""
+    """Một lệnh bắt buộc không đổi dòng nào (cảnh báo đã bị xử lý / đóng, vượt sức nhận): rollback."""
 
 
 class Db:
@@ -44,19 +45,19 @@ class Db:
                 cur.execute(sql, params)
                 return cur.fetchall() if cur.description else []
 
-    def run_tx(self, statements: list[tuple[str, Any]], require_first: bool = False) -> list[int]:
+    def run_tx(self, statements: list[tuple[str, Any]], required: tuple[int, ...] = ()) -> list[int]:
         """Chạy nhiều lệnh trong MỘT transaction; trả về rowcount từng lệnh.
 
-        require_first: lệnh đầu phải đổi đúng 1 dòng, nếu không thì rollback cả transaction.
+        required: chỉ số các lệnh phải đổi ≥ 1 dòng, nếu không thì rollback cả transaction.
         """
         with self.lock:
             self._ensure()
             counts: list[int] = []
             with self.conn.transaction(), self.conn.cursor() as cur:
-                for sql, params in statements:
+                for index, (sql, params) in enumerate(statements):
                     cur.execute(sql, params)
                     counts.append(cur.rowcount)
-                    if require_first and len(counts) == 1 and counts[0] != 1:
+                    if index in required and cur.rowcount < 1:
                         raise StaleAlert
             return counts
 
@@ -105,8 +106,8 @@ def open_queue() -> list[dict]:
 
 
 def open_alert(station: str, alert_type: str) -> dict | None:
-    sql = """SELECT a.*, EXTRACT(EPOCH FROM coalesce(a.action_done_at, now()) - a.opened_at) AS elapsed_sec
-               FROM fact_alert a
+    """Cảnh báo đang mở của trạm, kèm đồng hồ dữ liệu (data_wait_min, deadline_min, is_overdue)."""
+    sql = """SELECT * FROM v_alert_queue
               WHERE run_id = %s AND station_id = %s AND alert_type = %s
                 AND status IN ('OPEN', 'ACK', 'ACTION_TAKEN')"""
     return one(sql, (RUN_ID, station, alert_type))
@@ -127,98 +128,97 @@ def loads_at(station: str, ts: Any) -> dict | None:
 
 def alert_history(station: str, since: Any) -> list[dict]:
     sql = """SELECT alert_id, alert_type, severity, status, opened_ts, resolved_ts, peak_load_pct,
-                    verdict, root_cause
-               FROM fact_alert WHERE run_id = %s AND station_id = %s AND opened_ts >= %s
+                    verdict, root_cause, received_load, handled_ts, clock_start_ts, action_ts,
+                    data_wait_min, is_overdue, is_missed, is_late
+               FROM v_alert_queue WHERE run_id = %s AND station_id = %s AND opened_ts >= %s
               ORDER BY opened_ts DESC"""
     return rows(sql, (RUN_ID, station, since))
 
 
 def transfers(station: str | None = None, alert_id: int | None = None) -> list[dict]:
-    """Các lần chuyển tải (đi hoặc đến trạm), mới nhất trước."""
-    sql = """SELECT x.*, a.station_id AS source_station
-               FROM fact_alert_action x JOIN fact_alert a USING (alert_id)
-              WHERE a.run_id = %s AND x.action_type = 'TRANSFER'
-                AND (%s::text IS NULL OR a.station_id = %s OR x.target_station = %s)
-                AND (%s::bigint IS NULL OR x.alert_id = %s)
-              ORDER BY x.effective_from_ts DESC, x.action_id DESC"""
+    """Các lần chuyển tải (đi hoặc đến trạm), mới nhất trước, kèm trạng thái quá hạn."""
+    sql = """SELECT * FROM v_transfer_status
+              WHERE run_id = %s AND action_type = 'TRANSFER'
+                AND (%s::text IS NULL OR source_station = %s OR target_station = %s)
+                AND (%s::bigint IS NULL OR alert_id = %s)
+              ORDER BY effective_from_ts DESC, action_id DESC"""
     return rows(sql, (RUN_ID, station, station, station, alert_id, alert_id))
 
 
 def last_red_result(station: str) -> dict | None:
-    """Cảnh báo Đỏ thật đã tự đóng gần nhất của trạm (thẻ "Kết quả xử lý")."""
-    sql = """SELECT * FROM fact_alert
+    """Cảnh báo Đỏ đã đóng gần nhất của trạm (thẻ "Kết quả xử lý"), kể cả bỏ lỡ / báo giả."""
+    sql = """SELECT * FROM v_alert_queue
               WHERE run_id = %s AND station_id = %s AND alert_type = 'OVERLOAD' AND severity = 'RED'
-                AND status = 'RESOLVED' AND verdict = 'REAL'
+                AND status = 'RESOLVED'
               ORDER BY opened_ts DESC LIMIT 1"""
     return one(sql, (RUN_ID, station))
 
 
 # ---------------------------------------------------------------------------
-# Ghi (giờ thật luôn là now() của DB)
+# Ghi (giờ thật luôn là now() của DB; mốc dữ liệu = mốc mới nhất của trạm)
 # ---------------------------------------------------------------------------
-RESUME_SQL = """UPDATE replay_control SET paused = FALSE, updated_at = now()
-                 WHERE run_id = %s AND paused
-                   AND NOT EXISTS (SELECT 1 FROM fact_alert
-                                    WHERE run_id = %s AND severity = 'RED' AND status IN ('OPEN', 'ACK'))"""
+NOW_TS = "(SELECT max(c.ts) FROM cleaned c WHERE c.station_id = fact_alert.station_id)"
 
 
-def ack(alert_id: int, user: str) -> bool:
-    """Nhận cảnh báo Vàng (chỉ ghi người nhận)."""
-    sql = """UPDATE fact_alert SET status = 'ACK', acked_by = %s, acked_at = now(), updated_at = now()
-              WHERE alert_id = %s AND status = 'OPEN'"""
-    return get_db().run_tx([(sql, (user, alert_id))])[0] == 1
-
-
-def accept_real(alert_id: int, user: str) -> bool:
-    """① Xác nhận: ghi người nhận và xác nhận quá tải thật trong một lần bấm."""
-    sql = """UPDATE fact_alert
-                SET status = CASE WHEN status = 'OPEN' THEN 'ACK' ELSE status END,
-                    acked_by = coalesce(acked_by, %s), acked_at = coalesce(acked_at, now()),
-                    verdict = 'REAL', verified_at = now(), updated_at = now()
-              WHERE alert_id = %s AND verdict IS NULL AND status IN ('OPEN', 'ACK')"""
+def follow(alert_id: int, user: str) -> bool:
+    """Vàng – "Theo dõi": ghi ai bấm, giờ thật và mốc dữ liệu."""
+    sql = f"""UPDATE fact_alert SET status = 'ACK', acked_by = %s, acked_at = now(), acked_ts = {NOW_TS},
+                     updated_at = now()
+               WHERE alert_id = %s AND status = 'OPEN' AND severity = 'YELLOW'"""
     return get_db().run_tx([(sql, (user, alert_id))])[0] == 1
 
 
 def mark_false_alarm(alert_id: int, user: str) -> bool:
-    """Báo giả: đóng ngay (resolved_ts = last_ts), rồi chạy tiếp nếu không còn Đỏ chưa xử lý."""
-    sql = """UPDATE fact_alert SET verdict = 'FALSE_ALARM', verified_at = now(), status = 'RESOLVED',
-                    acked_by = coalesce(acked_by, %s), acked_at = coalesce(acked_at, now()),
-                    resolved_ts = last_ts, resolved_at = now(), updated_at = now()
-              WHERE alert_id = %s AND status IN ('OPEN', 'ACK')"""
+    """Đỏ – "Báo giả": đóng ngay (resolved_ts = last_ts), detector theo dõi ngầm tới khi tự đóng."""
+    sql = f"""UPDATE fact_alert SET verdict = 'FALSE_ALARM', verified_at = now(), status = 'RESOLVED',
+                     acked_by = coalesce(acked_by, %s), acked_at = coalesce(acked_at, now()),
+                     acked_ts = coalesce(acked_ts, {NOW_TS}),
+                     resolved_ts = last_ts, resolved_at = now(), updated_at = now()
+               WHERE alert_id = %s AND status IN ('OPEN', 'ACK')"""
     try:
-        get_db().run_tx([(sql, (user, alert_id)), (RESUME_SQL, (RUN_ID, RUN_ID))], require_first=True)
+        get_db().run_tx([(sql, (user, alert_id))], required=(0,))
     except StaleAlert:
         return False
     return True
 
 
 def transfer_load(alert_id: int, amount: float, target: str, user: str) -> bool:
-    """② Chuyển tải: hiệu lực từ mốc dữ liệu mới nhất của trạm (mô phỏng từ mốc kế tiếp).
-
-    Lần đầu chuyển cảnh báo sang ACTION_TAKEN; có thể chuyển thêm khi tải mô phỏng vẫn cao.
+    """Đỏ – "Xác nhận chuyển tải": tự ghi verdict = REAL; hiệu lực từ mốc dữ liệu mới nhất của trạm
+    (mô phỏng từ mốc kế tiếp). Lần đầu chuyển cảnh báo sang ACTION_TAKEN; có thể chuyển thêm.
+    Trạm nhận bị giới hạn ngay lúc chuyển: lượng ≤ yellow_pct × định mức − S_H (sau chuyển) hiện tại.
     """
-    update = """UPDATE fact_alert SET status = 'ACTION_TAKEN', action_done_at = coalesce(action_done_at, now()),
-                       updated_at = now()
-                 WHERE alert_id = %s AND verdict = 'REAL' AND status IN ('ACK', 'ACTION_TAKEN')"""
+    update = f"""UPDATE fact_alert
+                    SET status = 'ACTION_TAKEN', verdict = 'REAL', verified_at = coalesce(verified_at, now()),
+                        acked_by = coalesce(acked_by, %s), acked_at = coalesce(acked_at, now()),
+                        acked_ts = coalesce(acked_ts, {NOW_TS}),
+                        action_done_at = coalesce(action_done_at, now()), action_ts = coalesce(action_ts, {NOW_TS}),
+                        updated_at = now()
+                  WHERE alert_id = %s AND severity = 'RED' AND status IN ('OPEN', 'ACK', 'ACTION_TAKEN')"""
     insert = """INSERT INTO fact_alert_action (alert_id, action_type, amount, target_station,
                                                effective_from_ts, done_by)
-                SELECT a.alert_id, 'TRANSFER', %s, %s,
-                       (SELECT max(ts) FROM cleaned c WHERE c.station_id = a.station_id), %s
-                  FROM fact_alert a WHERE a.alert_id = %s"""
+                SELECT a.alert_id, 'TRANSFER', %(amount)s, %(target)s,
+                       (SELECT max(ts) FROM cleaned c WHERE c.station_id = a.station_id), %(user)s
+                  FROM fact_alert a
+                  JOIN v_station_latest n ON n.run_id = a.run_id AND n.station_id = %(target)s
+                  JOIN param_threshold  p ON p.station_id = %(target)s
+                 WHERE a.alert_id = %(alert_id)s
+                   AND %(amount)s <= p.yellow_pct / 100.0 * n.rated_load - n.s_h_sim + 1e-9"""
     try:
-        get_db().run_tx([(update, (alert_id,)), (insert, (amount, target, user, alert_id)),
-                         (RESUME_SQL, (RUN_ID, RUN_ID))], require_first=True)
+        get_db().run_tx([(update, (user, alert_id)),
+                         (insert, {"amount": amount, "target": target, "user": user, "alert_id": alert_id})],
+                        required=(0, 1))
     except (StaleAlert, psycopg.errors.CheckViolation):
         return False
     return True
 
 
 def send_to_maintenance(alert_id: int, user: str) -> bool:
-    sql = """UPDATE fact_alert
-                SET status = CASE WHEN status = 'OPEN' THEN 'ACK' ELSE status END,
-                    acked_by = coalesce(acked_by, %s), acked_at = coalesce(acked_at, now()),
-                    root_cause = 'SENSOR_MAINTENANCE', updated_at = now()
-              WHERE alert_id = %s AND status IN ('OPEN', 'ACK')"""
+    sql = f"""UPDATE fact_alert
+                 SET status = CASE WHEN status = 'OPEN' THEN 'ACK' ELSE status END,
+                     acked_by = coalesce(acked_by, %s), acked_at = coalesce(acked_at, now()),
+                     acked_ts = coalesce(acked_ts, {NOW_TS}),
+                     root_cause = 'SENSOR_MAINTENANCE', updated_at = now()
+               WHERE alert_id = %s AND status IN ('OPEN', 'ACK')"""
     return get_db().run_tx([(sql, (user, alert_id))])[0] == 1
 
 

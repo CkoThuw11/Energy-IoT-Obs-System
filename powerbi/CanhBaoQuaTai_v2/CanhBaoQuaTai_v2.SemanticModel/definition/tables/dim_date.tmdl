@@ -1,0 +1,75 @@
+table dim_date
+	lineageTag: fb99f167-d89e-46c3-a06f-20d8b65306cd
+
+	column date
+		dataType: dateTime
+		formatString: dd/mm/yyyy
+		lineageTag: 0d94006c-0088-4ae9-8f08-9c24f958d5d5
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column year
+		dataType: int64
+		formatString: 0
+		lineageTag: d6c76b07-5515-4250-82b3-a82e3125940d
+		summarizeBy: none
+		sourceColumn: year
+
+	column month_no
+		dataType: int64
+		formatString: 0
+		lineageTag: 4f70a266-b896-45af-baa8-0c5c7e6f1ff0
+		summarizeBy: none
+		sourceColumn: month_no
+
+	column year_month
+		dataType: string
+		lineageTag: a672de37-7fba-47a0-91fa-4dfb68435f36
+		summarizeBy: none
+		sourceColumn: year_month
+
+	column day_of_month
+		dataType: int64
+		formatString: 0
+		lineageTag: ad77ea88-4a66-4264-9719-f7b14d3cf662
+		summarizeBy: none
+		sourceColumn: day_of_month
+
+	column weekday_no
+		dataType: int64
+		formatString: 0
+		lineageTag: 849cbb70-d8eb-4ec0-b8d5-5ae0693d4d16
+		summarizeBy: none
+		sourceColumn: weekday_no
+
+	column weekday_name
+		dataType: string
+		lineageTag: 8658c452-f122-4b16-8055-d9373cd7da4b
+		summarizeBy: none
+		sourceColumn: weekday_name
+		sortByColumn: weekday_no
+
+	column is_weekend
+		dataType: int64
+		formatString: 0
+		lineageTag: 435be4c2-3d16-4ae7-9a08-aef519dfd79b
+		summarizeBy: none
+		sourceColumn: is_weekend
+
+	column season
+		dataType: string
+		lineageTag: b0dea22b-3345-44e9-8261-c75debf8f014
+		summarizeBy: none
+		sourceColumn: season
+
+	partition dim_date = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbHist ),
+				    Source = Db{[Schema = "gold", Item = "dim_date"]}[Data],
+				    Typed = Table.TransformColumnTypes ( Source, {{"date", type date}, {"year", Int64.Type}, {"month_no", Int64.Type}, {"year_month", type text}, {"day_of_month", Int64.Type}, {"weekday_no", Int64.Type}, {"weekday_name", type text}, {"is_weekend", Int64.Type}, {"season", type text}}, "en-US" )
+				in
+				    Typed

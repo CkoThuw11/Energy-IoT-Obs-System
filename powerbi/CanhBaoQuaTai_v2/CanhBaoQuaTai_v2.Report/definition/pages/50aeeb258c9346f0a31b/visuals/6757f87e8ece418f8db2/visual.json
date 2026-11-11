@@ -1,0 +1,221 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "6757f87e8ece418f8db2",
+  "position": {
+    "x": 16,
+    "y": 112,
+    "z": 7000,
+    "height": 600,
+    "width": 1248,
+    "tabOrder": 7000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "action_id"
+                }
+              },
+              "queryRef": "live_transfer.action_id",
+              "nativeQueryRef": "action_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "alert_id"
+                }
+              },
+              "queryRef": "live_transfer.alert_id",
+              "nativeQueryRef": "alert_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "source_station"
+                }
+              },
+              "queryRef": "live_transfer.source_station",
+              "nativeQueryRef": "source_station"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "target_station"
+                }
+              },
+              "queryRef": "live_transfer.target_station",
+              "nativeQueryRef": "target_station"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "amount"
+                }
+              },
+              "queryRef": "live_transfer.amount",
+              "nativeQueryRef": "amount"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "effective_from_ts"
+                }
+              },
+              "queryRef": "live_transfer.effective_from_ts",
+              "nativeQueryRef": "effective_from_ts"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "effective_to_ts"
+                }
+              },
+              "queryRef": "live_transfer.effective_to_ts",
+              "nativeQueryRef": "effective_to_ts"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "return_reason"
+                }
+              },
+              "queryRef": "live_transfer.return_reason",
+              "nativeQueryRef": "return_reason"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "active_min"
+                }
+              },
+              "queryRef": "live_transfer.active_min",
+              "nativeQueryRef": "active_min"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "is_overdue"
+                }
+              },
+              "queryRef": "live_transfer.is_overdue",
+              "nativeQueryRef": "is_overdue"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "receiver_level"
+                }
+              },
+              "queryRef": "live_transfer.receiver_level",
+              "nativeQueryRef": "receiver_level"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_transfer"
+                    }
+                  },
+                  "Property": "done_by"
+                }
+              },
+              "queryRef": "live_transfer.done_by",
+              "nativeQueryRef": "done_by"
+            }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Từng lần chuyển tải (giờ dữ liệu)'"
+                }
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "11D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

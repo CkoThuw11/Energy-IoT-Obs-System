@@ -1,0 +1,26 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_QueryOrder = ["dim_station","dim_customer_group","dim_date","fact_load_hourly","fact_overload_episode","fact_sensor_fault","hist_alert","live_alert","live_transfer","_Measures","PgServer","DbHist","DbLive"]
+
+annotation PBI_ProTooling = ["DevMode"]
+
+ref table dim_station
+ref table dim_customer_group
+ref table dim_date
+ref table fact_load_hourly
+ref table fact_overload_episode
+ref table fact_sensor_fault
+ref table hist_alert
+ref table live_alert
+ref table live_transfer
+ref table _Measures
+
+ref cultureInfo en-US

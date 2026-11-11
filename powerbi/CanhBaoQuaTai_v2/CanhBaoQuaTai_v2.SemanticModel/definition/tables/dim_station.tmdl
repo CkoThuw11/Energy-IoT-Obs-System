@@ -1,0 +1,104 @@
+table dim_station
+	lineageTag: cc707fa5-ed97-4626-becb-a935307b71c4
+
+	column station_id
+		dataType: string
+		lineageTag: 3f0c12ec-6bfd-436b-8288-7e5b449a8a6a
+		summarizeBy: none
+		sourceColumn: station_id
+
+	column station_name
+		dataType: string
+		lineageTag: c88cefe7-7368-49aa-bcbe-9cc538ac4304
+		summarizeBy: none
+		sourceColumn: station_name
+
+	column source
+		dataType: string
+		lineageTag: 581b3fb1-c992-482a-9ac6-9d141835919b
+		summarizeBy: none
+		sourceColumn: source
+
+	column data_origin
+		dataType: string
+		lineageTag: eba93c48-c79e-4f6b-860f-95a0b3ca594f
+		summarizeBy: none
+		sourceColumn: data_origin
+
+	column importance
+		dataType: int64
+		formatString: 0
+		lineageTag: 0da2ea6a-859d-4e18-b875-9ed1022ddb2c
+		summarizeBy: none
+		sourceColumn: importance
+
+	column neighbor_station_id
+		dataType: string
+		lineageTag: 869439ef-beaf-4d59-a23c-14dbee129793
+		summarizeBy: none
+		sourceColumn: neighbor_station_id
+
+	column neighbor_station_name
+		dataType: string
+		lineageTag: 3d93593b-8b70-4b90-87c5-4df8712572c4
+		summarizeBy: none
+		sourceColumn: neighbor_station_name
+
+	column rated_load
+		dataType: double
+		formatString: #,0.##
+		lineageTag: a831b354-970d-4d67-b459-cbc4767d333a
+		summarizeBy: none
+		sourceColumn: rated_load
+
+	column k
+		dataType: double
+		formatString: #,0.##
+		lineageTag: fc7521f9-db6e-4bd6-bf5e-045184740b80
+		summarizeBy: none
+		sourceColumn: k
+
+	column p99_sh
+		dataType: double
+		formatString: #,0.##
+		lineageTag: cc70647a-732f-4974-8827-6d129c26869e
+		summarizeBy: none
+		sourceColumn: p99_sh
+
+	column yellow_pct
+		dataType: int64
+		formatString: 0
+		lineageTag: 80fb79da-56b6-4c67-ad8a-45f9d7ad3145
+		summarizeBy: none
+		sourceColumn: yellow_pct
+
+	column red_pct
+		dataType: int64
+		formatString: 0
+		lineageTag: d3a379ef-e4e0-40ec-9d81-47e8cd3b6f0f
+		summarizeBy: none
+		sourceColumn: red_pct
+
+	column close_pct
+		dataType: int64
+		formatString: 0
+		lineageTag: cad76140-c51f-41aa-bb21-046e186c3a08
+		summarizeBy: none
+		sourceColumn: close_pct
+
+	column has_priority_customer
+		dataType: int64
+		formatString: 0
+		lineageTag: 6f651f77-4986-4d94-a034-6d7e3eb633cf
+		summarizeBy: none
+		sourceColumn: has_priority_customer
+
+	partition dim_station = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbHist ),
+				    Source = Db{[Schema = "gold", Item = "dim_station"]}[Data],
+				    Typed = Table.TransformColumnTypes ( Source, {{"station_id", type text}, {"station_name", type text}, {"source", type text}, {"data_origin", type text}, {"importance", Int64.Type}, {"neighbor_station_id", type text}, {"neighbor_station_name", type text}, {"rated_load", type number}, {"k", type number}, {"p99_sh", type number}, {"yellow_pct", Int64.Type}, {"red_pct", Int64.Type}, {"close_pct", Int64.Type}, {"has_priority_customer", Int64.Type}}, "en-US" )
+				in
+				    Typed

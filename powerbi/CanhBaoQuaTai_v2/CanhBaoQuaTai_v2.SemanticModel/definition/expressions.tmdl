@@ -1,0 +1,15 @@
+expression PgServer = "localhost:5433" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: a53630f3-83ff-4327-8b9b-ade9593fc9dd
+
+	annotation PBI_ResultType = Text
+
+expression DbHist = "energy_history" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 5884fb73-c93d-46b4-9eb2-4f61fcf6bf9e
+
+	annotation PBI_ResultType = Text
+
+expression DbLive = "energy" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: c4899d5f-9dd2-41a7-bc6c-b1f257382af2
+
+	annotation PBI_ResultType = Text
+

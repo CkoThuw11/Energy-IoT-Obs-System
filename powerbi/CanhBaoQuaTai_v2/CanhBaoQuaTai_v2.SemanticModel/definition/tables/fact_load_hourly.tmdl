@@ -1,0 +1,111 @@
+table fact_load_hourly
+	lineageTag: beaec818-03f1-462c-90ed-955094bc9c95
+
+	column hour_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: e0330454-2343-4f46-a4a4-1562b1c55e0d
+		summarizeBy: none
+		sourceColumn: hour_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column date
+		dataType: dateTime
+		formatString: dd/mm/yyyy
+		lineageTag: 5df844e6-615e-4bda-b988-98a89ba31104
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column station_id
+		dataType: string
+		lineageTag: af800953-9dc4-4ad8-baf8-ce7d8fbfe4e0
+		summarizeBy: none
+		sourceColumn: station_id
+
+	column hour_of_day
+		dataType: int64
+		formatString: 0
+		lineageTag: 026fdcaf-3078-49fd-8e0e-b35c69c095d3
+		summarizeBy: none
+		sourceColumn: hour_of_day
+
+	column weekday_no
+		dataType: int64
+		formatString: 0
+		lineageTag: 7cd72b59-4d27-498e-b19b-4f2ecd3d485f
+		summarizeBy: none
+		sourceColumn: weekday_no
+
+	column year_month
+		dataType: string
+		lineageTag: 06c04f53-9690-47ad-9b54-f8c62d80d83b
+		summarizeBy: none
+		sourceColumn: year_month
+
+	column avg_load_pct
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 25c49d95-99cb-4821-b0da-ef7651b451a4
+		summarizeBy: none
+		sourceColumn: avg_load_pct
+
+	column max_load_pct
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 06a529b0-3ab2-457a-aa3c-4e9b4073a44e
+		summarizeBy: none
+		sourceColumn: max_load_pct
+
+	column avg_ot
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 7d57a118-e99c-438b-bce5-a493a45106af
+		summarizeBy: none
+		sourceColumn: avg_ot
+
+	column max_ot
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 7c9cf7e7-3b1a-4810-a154-d75101954c46
+		summarizeBy: none
+		sourceColumn: max_ot
+
+	column n_records
+		dataType: int64
+		formatString: 0
+		lineageTag: fce324a4-d571-4655-bb6a-0a2ff6da9d04
+		summarizeBy: none
+		sourceColumn: n_records
+
+	column load_band
+		dataType: string
+		lineageTag: e8a394f0-22f6-41eb-bdb5-c13f4ecd8a37
+		summarizeBy: none
+		sourceColumn: load_band
+
+	column is_ge90_hour
+		dataType: int64
+		formatString: 0
+		lineageTag: b8b67bf1-ef43-4ddd-991d-bc4cfc79cc2d
+		summarizeBy: none
+		sourceColumn: is_ge90_hour
+
+	column is_overload_hour
+		dataType: int64
+		formatString: 0
+		lineageTag: bba4d00b-c074-412e-a622-ecff562f00d1
+		summarizeBy: none
+		sourceColumn: is_overload_hour
+
+	partition fact_load_hourly = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbHist ),
+				    Source = Db{[Schema = "gold", Item = "fact_load_hourly"]}[Data],
+				    Typed = Table.TransformColumnTypes ( Source, {{"hour_ts", type datetime}, {"date", type date}, {"station_id", type text}, {"hour_of_day", Int64.Type}, {"weekday_no", Int64.Type}, {"year_month", type text}, {"avg_load_pct", type number}, {"max_load_pct", type number}, {"avg_ot", type number}, {"max_ot", type number}, {"n_records", Int64.Type}, {"load_band", type text}, {"is_ge90_hour", Int64.Type}, {"is_overload_hour", Int64.Type}}, "en-US" )
+				in
+				    Typed

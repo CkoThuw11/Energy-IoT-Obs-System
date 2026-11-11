@@ -1,0 +1,177 @@
+table _Measures
+	lineageTag: 928672d5-133d-4ffa-9551-0b76f595e892
+
+	measure 'Tải TB (%)' = AVERAGE ( fact_load_hourly[avg_load_pct] )
+		formatString: 0.0
+		displayFolder: 1 Tải lưới
+		lineageTag: f7fa600e-462b-4afb-b705-030758f3eab1
+
+	measure 'Tải đỉnh (%)' = MAX ( fact_load_hourly[max_load_pct] )
+		formatString: 0.0
+		displayFolder: 1 Tải lưới
+		lineageTag: 82f1971e-3bb4-49bf-8a5c-1547c34f98dd
+
+	measure 'Giờ ≥ 90%' = SUM ( fact_load_hourly[is_ge90_hour] ) + 0
+		formatString: 0
+		displayFolder: 1 Tải lưới
+		lineageTag: 382a92bf-797a-4d55-8af1-88ea88f30168
+
+	measure 'Giờ quá tải ≥ 100%' = SUM ( fact_load_hourly[is_overload_hour] ) + 0
+		formatString: 0
+		displayFolder: 1 Tải lưới
+		lineageTag: 2746ec75-5770-46c1-b0f6-2f14dcefdfdb
+
+	measure '% giờ ≥ 90%' = DIVIDE ( [Giờ ≥ 90%], COUNTROWS ( fact_load_hourly ) )
+		formatString: 0.0%
+		displayFolder: 1 Tải lưới
+		lineageTag: 0d29f57e-71ad-4c18-bf53-a22e6f7470be
+
+	measure 'Cảnh báo Đỏ' = CALCULATE ( COUNTROWS ( hist_alert ), hist_alert[severity] = "RED" ) + 0
+		formatString: 0
+		displayFolder: 2 Sự cố
+		lineageTag: 16cc3a12-9eac-46bc-9da9-90668d2a3714
+
+	measure 'Cảnh báo Vàng' = CALCULATE ( COUNTROWS ( hist_alert ), hist_alert[severity] = "YELLOW" ) + 0
+		formatString: 0
+		displayFolder: 2 Sự cố
+		lineageTag: f44efe39-dd0f-48aa-bae8-97625e0f081f
+
+	measure 'Cảnh báo cảm biến' = CALCULATE ( COUNTROWS ( hist_alert ), hist_alert[severity] = "SENSOR" ) + 0
+		formatString: 0
+		displayFolder: 2 Sự cố
+		lineageTag: a55cc3ae-abb7-4821-93c7-30934caafffc
+
+	measure 'Đợt quá tải thật' = COUNTROWS ( fact_overload_episode ) + 0
+		formatString: 0
+		displayFolder: 2 Sự cố
+		lineageTag: 55aeac67-70f3-493b-8180-4b117c029cd0
+
+	measure 'Thời lượng đợt quá tải TB (phút)' = AVERAGE ( fact_overload_episode[duration_min] )
+		formatString: 0
+		displayFolder: 2 Sự cố
+		lineageTag: 0cf95c3b-1aef-401c-9bd8-6679a793495b
+
+	measure 'Giờ ≥ 100% trong các đợt' = SUM ( fact_overload_episode[minutes_ge100] ) / 60
+		formatString: 0.0
+		displayFolder: 2 Sự cố
+		lineageTag: b694b422-5523-402b-ade9-4e2abf17e95e
+
+	measure 'Đỉnh đợt quá tải (%)' = MAX ( fact_overload_episode[peak_load_pct] )
+		formatString: 0.0
+		displayFolder: 2 Sự cố
+		lineageTag: ef70e675-ddd0-4b08-b24d-5d5e8692832f
+
+	measure 'Cảnh báo không khớp sự cố (%)' = DIVIDE ( SUM ( hist_alert[is_unmatched] ), COUNTROWS ( hist_alert ) )
+		formatString: 0%
+		displayFolder: 2 Sự cố
+		lineageTag: 0b783798-79d8-4717-aefa-16c220305df6
+
+	measure 'Đỏ (LIVE)' = CALCULATE ( COUNTROWS ( live_alert ), live_alert[severity] = "RED" ) + 0
+		formatString: 0
+		displayFolder: 3 Vận hành
+		lineageTag: f68b667f-3e8e-4c5c-a50a-ee0a1e112542
+
+	measure 'Đỏ đúng hạn' = CALCULATE ( SUM ( live_alert[is_on_time] ), live_alert[severity] = "RED" ) + 0
+		formatString: 0
+		displayFolder: 3 Vận hành
+		lineageTag: 5bbb12d7-4bc3-495c-a86c-be3da247c3a9
+
+	measure 'Đỏ xử lý trễ' = SUM ( live_alert[is_late] ) + 0
+		formatString: 0
+		displayFolder: 3 Vận hành
+		lineageTag: 4b3feeaa-961d-47a0-9bfd-e025d346d31f
+
+	measure 'Đỏ bị bỏ lỡ' = SUM ( live_alert[is_missed] ) + 0
+		formatString: 0
+		displayFolder: 3 Vận hành
+		lineageTag: bb87436d-56c1-47f6-aa88-287a368f24a3
+
+	measure 'Đỏ báo giả' = SUM ( live_alert[is_false_alarm_verdict] ) + 0
+		formatString: 0
+		displayFolder: 3 Vận hành
+		lineageTag: 5baeef48-1877-4e01-9d8b-2efb3c0819ff
+
+	measure '% Đỏ đúng hạn' = DIVIDE ( [Đỏ đúng hạn], [Đỏ (LIVE)] - [Đỏ báo giả] )
+		formatString: 0%
+		displayFolder: 3 Vận hành
+		lineageTag: 18cd46cb-8e4d-469a-8c1e-4a7f990340f8
+
+	measure 'Tỷ lệ báo giả' = DIVIDE ( [Đỏ báo giả], [Đỏ (LIVE)] )
+		formatString: 0%
+		displayFolder: 3 Vận hành
+		lineageTag: 1a453ba6-17ef-4101-9a85-f4bde04717ce
+
+	measure 'Thời gian chuyển tải TB (phút dữ liệu)' = CALCULATE ( AVERAGE ( live_alert[handle_min] ), live_alert[severity] = "RED", live_alert[is_handled] = 1 )
+		formatString: 0
+		displayFolder: 3 Vận hành
+		lineageTag: d25cf8d9-74c6-4fd8-9efc-45968014cd18
+
+	measure '% Vàng theo dõi đúng hạn' = DIVIDE ( CALCULATE ( SUM ( live_alert[is_on_time] ), live_alert[severity] = "YELLOW" ), CALCULATE ( COUNTROWS ( live_alert ), live_alert[severity] = "YELLOW" ) )
+		formatString: 0%
+		displayFolder: 3 Vận hành
+		lineageTag: 98ba836e-255c-4618-a320-4f9b182d555c
+
+	measure 'Số lần chuyển tải' = COUNTROWS ( live_transfer ) + 0
+		formatString: 0
+		displayFolder: 4 Chuyển tải
+		lineageTag: da2e7350-ecb7-4dbc-86e8-1047a4230ed5
+
+	measure 'Tổng lượng chuyển' = SUM ( live_transfer[amount] ) + 0
+		formatString: 0.00
+		displayFolder: 4 Chuyển tải
+		lineageTag: a91cf97d-50bc-47e8-a77b-cfea8f2f1213
+
+	measure '% trả tải an toàn' = DIVIDE ( SUM ( live_transfer[is_safe_return] ), COUNTROWS ( live_transfer ) )
+		formatString: 0%
+		displayFolder: 4 Chuyển tải
+		lineageTag: b12b92ef-8a3c-4ad5-bf96-4c9934251f60
+
+	measure 'Trả do hết 2 giờ' = SUM ( live_transfer[is_timeout_return] ) + 0
+		formatString: 0
+		displayFolder: 4 Chuyển tải
+		lineageTag: 48465ac0-d8f9-43dc-963c-85dbd1913003
+
+	measure 'Chuyển tải quá hạn' = SUM ( live_transfer[is_overdue] ) + 0
+		formatString: 0
+		displayFolder: 4 Chuyển tải
+		lineageTag: 7a2af480-bee8-430c-858a-224a37e6982c
+
+	measure 'Trạm nhận bị đẩy lên Vàng/Đỏ' = SUM ( live_transfer[receiver_pushed] ) + 0
+		formatString: 0
+		displayFolder: 4 Chuyển tải
+		lineageTag: b11a3929-1a87-435d-9bf6-5c36d7eae43a
+
+	measure 'Lỗi cảm biến' = COUNTROWS ( fact_sensor_fault ) + 0
+		formatString: 0
+		displayFolder: 5 Cảm biến
+		lineageTag: 2be9de76-3bea-40c5-b5fd-c42e90b2891e
+
+	measure 'Giờ mất dữ liệu tin cậy' = SUM ( fact_sensor_fault[duration_hours] ) + 0
+		formatString: 0
+		displayFolder: 5 Cảm biến
+		lineageTag: 9287e994-4d01-4f56-bf2f-2a1975e4b3bf
+
+	measure '% lỗi cảm biến được phát hiện' = DIVIDE ( SUM ( fact_sensor_fault[is_detected] ), COUNTROWS ( fact_sensor_fault ) )
+		formatString: 0%
+		displayFolder: 5 Cảm biến
+		lineageTag: 15476d1f-dbcb-4b9c-bb17-717d758d00ce
+
+	measure 'Trễ phát hiện TB (phút)' = AVERAGE ( fact_sensor_fault[detect_delay_min] )
+		formatString: 0
+		displayFolder: 5 Cảm biến
+		lineageTag: 8ce8486c-6e03-4509-9a0e-18c94461eb25
+
+	column Value
+		dataType: string
+		isHidden
+		lineageTag: 4ee730ae-3ac3-4e02-aee2-161650573e60
+		summarizeBy: none
+		sourceColumn: Value
+
+	partition _Measures = m
+		mode: import
+		source =
+				let
+				    Source = #table ( type table [Value = text], {} )
+				in
+				    Source

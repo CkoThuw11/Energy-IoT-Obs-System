@@ -1,0 +1,140 @@
+table live_transfer
+	lineageTag: 104f4d9a-efec-440e-8d88-dded2c2aceb8
+
+	column action_id
+		dataType: int64
+		formatString: 0
+		lineageTag: d50b3255-aceb-4a53-bcb9-2c6172ab4ecd
+		summarizeBy: none
+		sourceColumn: action_id
+
+	column alert_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 0dbd7243-75f2-4fd2-8ebd-2fd00f60935d
+		summarizeBy: none
+		sourceColumn: alert_id
+
+	column run_id
+		dataType: string
+		lineageTag: fc1773b2-8265-4f09-9590-0954822b9563
+		summarizeBy: none
+		sourceColumn: run_id
+
+	column source_station
+		dataType: string
+		lineageTag: c2207d55-9deb-47a4-ba66-f5453d859fec
+		summarizeBy: none
+		sourceColumn: source_station
+
+	column target_station
+		dataType: string
+		lineageTag: 236912eb-21ca-43f1-adcc-ea9d8ccc687a
+		summarizeBy: none
+		sourceColumn: target_station
+
+	column amount
+		dataType: double
+		formatString: #,0.##
+		lineageTag: 8d1f31a2-fcff-4d5d-b4a7-fa8448f0516a
+		summarizeBy: none
+		sourceColumn: amount
+
+	column effective_from_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 8b60a7c8-4ef8-47d9-89ae-c6a056496be5
+		summarizeBy: none
+		sourceColumn: effective_from_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column effective_to_ts
+		dataType: dateTime
+		formatString: dd/mm/yyyy hh:nn
+		lineageTag: 8802cce8-4889-451d-8bb3-cea87a5c40d6
+		summarizeBy: none
+		sourceColumn: effective_to_ts
+
+		annotation UnderlyingDateTimeDataType = DateTime
+
+	column date
+		dataType: dateTime
+		formatString: dd/mm/yyyy
+		lineageTag: da5d2035-6166-4634-a1db-511136c1c584
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column return_reason
+		dataType: string
+		lineageTag: abfbe91d-96cc-4722-a3a5-93c23adb5754
+		summarizeBy: none
+		sourceColumn: return_reason
+
+	column active_min
+		dataType: double
+		formatString: #,0.##
+		lineageTag: f76296aa-88fe-48fa-af93-1ae43381e958
+		summarizeBy: none
+		sourceColumn: active_min
+
+	column is_safe_return
+		dataType: int64
+		formatString: 0
+		lineageTag: 06c93468-8c4c-4f86-8f02-0fd5ef0f83f2
+		summarizeBy: none
+		sourceColumn: is_safe_return
+
+	column is_timeout_return
+		dataType: int64
+		formatString: 0
+		lineageTag: b5267c8b-fa12-4257-90d2-2d2664a2d61a
+		summarizeBy: none
+		sourceColumn: is_timeout_return
+
+	column is_overdue
+		dataType: int64
+		formatString: 0
+		lineageTag: cf086589-df22-4244-9b6b-5bfef03613e5
+		summarizeBy: none
+		sourceColumn: is_overdue
+
+	column is_active
+		dataType: int64
+		formatString: 0
+		lineageTag: bf56df1b-235f-4790-a6fa-a5fc8f36211b
+		summarizeBy: none
+		sourceColumn: is_active
+
+	column done_by
+		dataType: string
+		lineageTag: 400c38d1-58fe-47dd-a160-085c9e629137
+		summarizeBy: none
+		sourceColumn: done_by
+
+	column receiver_level
+		dataType: int64
+		formatString: 0
+		lineageTag: 6cf69863-6cb7-4d3c-9dac-13d70522e9fb
+		summarizeBy: none
+		sourceColumn: receiver_level
+
+	column receiver_pushed
+		dataType: int64
+		formatString: 0
+		lineageTag: f4842e10-44bf-48b0-b9e9-bc3e099de90b
+		summarizeBy: none
+		sourceColumn: receiver_pushed
+
+	partition live_transfer = m
+		mode: import
+		source =
+				let
+				    Db = PostgreSQL.Database ( PgServer, DbLive ),
+				    Source = Db{[Schema = "gold", Item = "fact_transfer"]}[Data],
+				    Run = Table.SelectRows ( Source, each [run_id] = "LIVE" ),
+				    Typed = Table.TransformColumnTypes ( Run, {{"action_id", Int64.Type}, {"alert_id", Int64.Type}, {"run_id", type text}, {"source_station", type text}, {"target_station", type text}, {"amount", type number}, {"effective_from_ts", type datetime}, {"effective_to_ts", type datetime}, {"date", type date}, {"return_reason", type text}, {"active_min", type number}, {"is_safe_return", Int64.Type}, {"is_timeout_return", Int64.Type}, {"is_overdue", Int64.Type}, {"is_active", Int64.Type}, {"done_by", type text}, {"receiver_level", Int64.Type}, {"receiver_pushed", Int64.Type}}, "en-US" )
+				in
+				    Typed

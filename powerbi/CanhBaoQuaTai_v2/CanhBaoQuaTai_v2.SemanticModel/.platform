@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "CanhBaoQuaTai_v2"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "289dd007-70b7-4d85-aed2-fe83747a99e9"
+  }
+}

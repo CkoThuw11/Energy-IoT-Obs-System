@@ -1,0 +1,249 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "eb7eded4fc5147f0a0d7",
+  "position": {
+    "x": 16,
+    "y": 410,
+    "z": 9000,
+    "height": 302,
+    "width": 1248,
+    "tabOrder": 9000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "alert_id"
+                }
+              },
+              "queryRef": "live_alert.alert_id",
+              "nativeQueryRef": "alert_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "station_id"
+                }
+              },
+              "queryRef": "live_alert.station_id",
+              "nativeQueryRef": "station_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "severity"
+                }
+              },
+              "queryRef": "live_alert.severity",
+              "nativeQueryRef": "severity"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "status"
+                }
+              },
+              "queryRef": "live_alert.status",
+              "nativeQueryRef": "status"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "opened_ts"
+                }
+              },
+              "queryRef": "live_alert.opened_ts",
+              "nativeQueryRef": "opened_ts"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "escalated_ts"
+                }
+              },
+              "queryRef": "live_alert.escalated_ts",
+              "nativeQueryRef": "escalated_ts"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "action_ts"
+                }
+              },
+              "queryRef": "live_alert.action_ts",
+              "nativeQueryRef": "action_ts"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "handle_min"
+                }
+              },
+              "queryRef": "live_alert.handle_min",
+              "nativeQueryRef": "handle_min"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "is_on_time"
+                }
+              },
+              "queryRef": "live_alert.is_on_time",
+              "nativeQueryRef": "is_on_time"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "is_late"
+                }
+              },
+              "queryRef": "live_alert.is_late",
+              "nativeQueryRef": "is_late"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "is_missed"
+                }
+              },
+              "queryRef": "live_alert.is_missed",
+              "nativeQueryRef": "is_missed"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "verdict"
+                }
+              },
+              "queryRef": "live_alert.verdict",
+              "nativeQueryRef": "verdict"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "acked_by"
+                }
+              },
+              "queryRef": "live_alert.acked_by",
+              "nativeQueryRef": "acked_by"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "live_alert"
+                    }
+                  },
+                  "Property": "received_load"
+                }
+              },
+              "queryRef": "live_alert.received_load",
+              "nativeQueryRef": "received_load"
+            }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Cảnh báo LIVE (thời gian xử lý tính bằng phút dữ liệu)'"
+                }
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "11D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}
