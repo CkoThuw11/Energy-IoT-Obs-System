@@ -1,0 +1,32 @@
+17:01:53 == EV031: phát 10/02/2018 18:45 → 23:45 ở x20
+17:04:58 Cảnh báo #2 Vàng, mở 2018-02-10 19:45:00
+17:05:04   chụp 01_vang_dieu_hanh.png
+17:05:08   bấm 'Theo dõi'
+17:05:08   chụp 01b_vang_da_theo_doi.png
+17:08:49 Cảnh báo #2 lên Đỏ 2018-02-10 21:00:00
+17:08:54   chụp 02a_do_dieu_hanh.png
+17:09:00   chụp 02_do_chi_tiet_tram.png
+17:09:03   bấm 'Xác nhận chuyển tải'
+17:09:17   bấm 'Lưu nguyên nhân'
+17:09:17   chụp 02b_sau_chuyen_tai.png
+17:16:28 == EV031 xong
+17:16:37   chụp 03_chi_tiet_sau_tra_tai.png
+17:16:43   chụp 03b_dieu_hanh_ket_thuc_EV031.png
+17:16:43 == Reset như R3 (giữ cảnh báo)
+17:16:48 == EV033: phát 23/02/2018 02:30 → 06:45 ở x20
+17:29:08 == EV033 xong
+17:29:15   chụp 05_dieu_hanh_ket_thuc.png
+17:29:23   chụp 06_bao_cao_quan_tri.png
+17:29:23 == Kết thúc
+17:30:16 == EV033: phát 23/02/2018 02:30 → 06:45 ở x20
+17:35:37 Cảnh báo #3 cảm biến, mở 2018-02-23 04:15:00
+17:35:44   chụp 04_cam_bien_dieu_hanh.png
+17:35:47   bấm 'Chuyển bảo trì'
+17:35:47   chụp 04b_cam_bien_da_chuyen_bao_tri.png
+17:35:53   chụp 04c_cam_bien_chi_tiet.png
+17:42:37 == EV033 xong
+17:42:43   chụp 05_dieu_hanh_ket_thuc.png
+17:42:51   chụp 06_bao_cao_quan_tri.png
+17:43:00   chụp 06_bao_cao_quan_tri_full.png
+17:43:00 == Phát nhanh lại EV031 để chụp biểu đồ (sẽ xóa cảnh báo phụ sau khi chụp)
+17:45:12   chụp 03_chi_tiet_sau_tra_tai_full.png
